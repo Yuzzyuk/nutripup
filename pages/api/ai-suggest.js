@@ -1,71 +1,62 @@
 // pages/api/ai-suggest.js
-import OpenAI from "openai";
-
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const { dog, meals } = req.body || {};
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+
+  const total = (meals || []).reduce(
+    (acc, m) => {
+      acc.protein += m.protein || 0;
+      acc.fat += m.fat || 0;
+      acc.carbs += m.carbs || 0;
+      acc.calories += m.calories || 0;
+      return acc;
+    },
+    { protein: 0, fat: 0, carbs: 0, calories: 0 }
+  );
+
+  const prompt = `
+You are a canine nutrition coach. The user feeds homemade meals.
+Dog profile:
+- Name: ${dog?.name || "Dog"}
+- Age: ${dog?.age || "-"}
+- Breed: ${dog?.breed || "-"}
+- Weight: ${dog?.weight || "-"} ${dog?.weightUnit || "kg"}
+- Activity: ${dog?.activityLevel || "-"}
+- Health focus: ${(Array.isArray(dog?.healthFocus) ? dog.healthFocus : []).join(", ") || "none"}
+
+Today's totals (approx):
+- Protein: ${total.protein.toFixed(1)} g
+- Fat: ${total.fat.toFixed(1)} g
+- Carbs: ${total.carbs.toFixed(1)} g
+- Calories: ${Math.round(total.calories)} kcal
+
+Return 3–5 short, reassuring suggestions in Japanese, with concrete gram suggestions when possible (e.g., “卵殻カルシウム1.2g追加”). Keep it warm and premium tone.
+`;
 
   try {
-    const { meals, dogProfile, model = "gpt-4o-mini", promptText = "" } = req.body;
-
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
-    }
-
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    // 入力を短く要約（コスト節約）
-    const mealsBrief = (Array.isArray(meals) ? meals : [])
-      .slice(0, 20)
-      .map((m) => ({
-        name: m.name,
-        portion: m.portion,
-        protein: m.protein,
-        fat: m.fat,
-        carbs: m.carbs,
-        calories: m.calories,
-        method: m.cookingMethod,
-      }));
-
-    const profileBrief = {
-      name: dogProfile?.name || "",
-      age: dogProfile?.age || "",
-      breed: dogProfile?.breed || "",
-      weight: dogProfile?.weight || "",
-      activityLevel: dogProfile?.activityLevel || "",
-      healthFocus: Array.isArray(dogProfile?.healthFocus)
-        ? dogProfile.healthFocus
-        : [],
-    };
-
-    const systemPrompt = `
-You are a canine nutrition assistant for homemade diets.
-Be warm but concise. Use specific gram-level recommendations.
-If something is excessive, say how many grams to reduce.
-Base reasoning on AAFCO-style completeness (approximate if exact data absent).
-Return at most 3 bullet points.
-`;
-
-    const userPrompt = `
-Profile: ${JSON.stringify(profileBrief)}
-Today's meals (first 20 shown): ${JSON.stringify(mealsBrief)}
-Goal: Provide balanced, actionable guidance for today. If protein/fat/energy look high or low, suggest concrete (±g) adjustments and example foods. If omega-3 is likely low, suggest salmon or fish oil with a safe dose estimate.
-Extra instruction from user (optional):
-${promptText}
-`;
-
-    const completion = await openai.chat.completions.create({
-      model,
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: systemPrompt.trim() },
-        { role: "user", content: userPrompt.trim() },
-      ],
+    // OpenAI Chat Completions（gpt-4o-mini 例）
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a helpful canine nutrition assistant." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7,
+      }),
     });
-
-    const text = completion.choices?.[0]?.message?.content || "";
-    return res.status(200).json({ text });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: err?.message || "Server error" });
+    const json = await r.json();
+    const text = json?.choices?.[0]?.message?.content || "No suggestions.";
+    res.status(200).json({ text });
+  } catch (e) {
+    res.status(500).json({ error: "OpenAI request failed" });
   }
 }
