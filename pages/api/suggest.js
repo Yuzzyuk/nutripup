@@ -9,36 +9,27 @@ const REF_LINKS = [
     url: "https://wsava.org/wp-content/uploads/2020/01/The-WSAVA-Global-Nutrition-Toolkit-2013.pdf",
   },
   {
-    title: "AAFCO Dog Food Nutrient Profiles（Appendix）",
+    title: "AAFCO Dog Food Nutrient Profiles (Appendix)",
     url: "https://www.aafco.org/wp-content/uploads/2023/05/Guidelines-for-AAFCO-Feeding-Trials-2023.pdf",
   },
 ];
 
-// 万一コードブロック付きで返ってきても抜き出せる保険
 function safeParseJson(text) {
   if (!text) return null;
-  // ```json ... ``` の中身だけ抜く
   const fence = text.match(/```json\s*([\s\S]*?)```/i);
   const candidate = fence ? fence[1] : text;
-
-  // 先頭の最初の { から最後の } までを抽出
   const first = candidate.indexOf("{");
   const last = candidate.lastIndexOf("}");
   const core = first >= 0 && last > first ? candidate.slice(first, last + 1) : candidate;
-
-  try {
-    return JSON.parse(core);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(core); } catch { return null; }
 }
 
 function buildSystemPrompt() {
   return `You are a professional canine nutritionist.
 Provide concise, personalized, evidence-aware coaching for home-cooked diets.
 Base reasoning on AAFCO dog nutrient profiles and WSAVA life-stage guidance.
-Do not make medical claims; if disease is suspected, advise veterinarian consult.
-Use the user's language. Keep a warm, premium tone.`;
+Avoid medical claims; if disease suspected, advise veterinarian consult.
+Use the user's language with a warm, premium tone.`;
 }
 
 function buildUserPrompt({ dogProfile = {}, meals = [] }) {
@@ -71,11 +62,10 @@ TODAY_MEALS (approx totals)
 - carbs_g: ${totals.carbs.toFixed(1)}
 - kcal: ${Math.round(totals.calories)}
 
-Return JSON only (the server enforces a JSON schema).
-`;
+Return JSON only.`;
 }
 
-// OpenAIのJSONスキーマ（Responses API）
+// OpenAI JSON Schema (Responses API)
 const responseFormat = {
   type: "json_schema",
   json_schema: {
@@ -101,10 +91,7 @@ const responseFormat = {
             required: ["title", "detail", "amount", "unit"],
           },
         },
-        checks: {
-          type: "array",
-          items: { type: "string" },
-        },
+        checks: { type: "array", items: { type: "string" } },
         references: {
           type: "array",
           items: {
@@ -124,8 +111,28 @@ const responseFormat = {
   },
 };
 
+function extractError(e) {
+  // OpenAI SDK or fetch系のどちらでも情報を拾う
+  const status = e?.status || e?.response?.status || 500;
+  const data = e?.response?.data || e?.data || e?.cause || null;
+  const msg =
+    data?.error?.message ||
+    e?.message ||
+    "Unknown error";
+  const code = data?.error?.code || data?.code || null;
+  return { status, message: msg, code, data };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({
+      error: "AI_SUGGESTION_FAILED",
+      message: "Missing OPENAI_API_KEY on the server.",
+      code: "missing_api_key",
+    });
+  }
 
   try {
     const { dogProfile, meals } = req.body || {};
@@ -141,26 +148,29 @@ export default async function handler(req, res) {
       ],
     });
 
-    // 公式は schema 指定時でも output_text に JSON が入る想定
     const text = (response.output_text || "").trim();
     let json = safeParseJson(text);
 
     if (!json) {
-      // 予備: contentからjsonを直接拾える場合
+      // 別経路でJSONが入っていることもある
       const first = response?.output?.[0]?.content?.find?.((c) => c.type === "json");
       if (first?.json) json = first.json;
     }
 
     if (!json) throw new Error("LLM returned non-JSON");
 
-    // 参照が無ければ必ず補う
     if (!Array.isArray(json.references) || !json.references.length) {
       json.references = REF_LINKS;
     }
 
     res.status(200).json(json);
   } catch (e) {
-    console.error("AI suggest error:", e?.response?.data || e.message);
-    res.status(500).json({ error: "AI_SUGGESTION_FAILED" });
+    const err = extractError(e);
+    console.error("AI suggest error:", err);
+    res.status(err.status || 500).json({
+      error: "AI_SUGGESTION_FAILED",
+      message: err.message,
+      code: err.code,
+    });
   }
 }
