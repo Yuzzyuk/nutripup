@@ -30,8 +30,10 @@ function normalizeDog(d = {}) {
   const hf = Array.isArray(d.healthFocus) ? d.healthFocus : [];
   return {
     id: d.id || genId(),
+    // 新旧互換（age しか無い場合でも取り込む）
+    ageYears: d.ageYears ?? (typeof d.age === "number" ? String(Math.floor(d.age)) : (d.age ?? "")),
+    ageMonths: d.ageMonths ?? "",
     name: d.name ?? "",
-    age: d.age ?? "",
     breed: d.breed ?? "",
     weight: d.weight ?? "",
     weightUnit: d.weightUnit || "kg",
@@ -79,15 +81,17 @@ export default function Home() {
       const rawDogs = localStorage.getItem(DOGS_KEY);
       const rawSelected = localStorage.getItem(SELECTED_DOG_KEY);
       let list = rawDogs ? JSON.parse(rawDogs) : [];
+      let createdNew = false;
 
-      // 旧データ移行
+      // 旧データ移行（単頭 → 多頭）
       if (!list || list.length === 0) {
         const old = localStorage.getItem(OLD_PROFILE_KEY);
         if (old) {
           const p = JSON.parse(old);
           const migrated = normalizeDog({
             name: p.name || "My Dog",
-            age: p.age || "",
+            ageYears: p.ageYears ?? p.age ?? "",
+            ageMonths: p.ageMonths ?? "",
             breed: p.breed || "",
             weight: p.weight || "",
             weightUnit: p.weightUnit || "kg",
@@ -101,10 +105,30 @@ export default function Home() {
         }
       }
 
+      // ★ 完全新規なら「空の犬」を1頭作る → すぐプロフィールへ
+      if (!list || list.length === 0) {
+        const blank = normalizeDog({
+          id: genId(),
+          name: "",
+          ageYears: "", ageMonths: "",
+          breed: "",
+          weight: "",
+          weightUnit: "kg",
+          activityLevel: "Moderate",
+          healthFocus: [],
+          photo: "",
+        });
+        list = [blank];
+        localStorage.setItem(DOGS_KEY, JSON.stringify(list));
+        localStorage.setItem(SELECTED_DOG_KEY, blank.id);
+        createdNew = true;
+      }
+
       list = Array.isArray(list) ? list.map(normalizeDog) : [];
+      const sel = rawSelected || (list[0]?.id || "");
       setDogs(list);
-      setSelectedDogId(rawSelected || (list[0]?.id || ""));
-      setStep(list && list.length > 0 ? "home" : "profile");
+      setSelectedDogId(sel);
+      setStep(createdNew ? "profile" : (list && list.length > 0 ? "home" : "profile"));
     } catch {
       setDogs([]);
       setSelectedDogId("");
@@ -148,8 +172,10 @@ export default function Home() {
   /* ---- 犬の CRUD ---- */
   const addDog = () => {
     const blank = normalizeDog({
-      id: genId(), name: "", age: "", breed: "", weight: "",
-      weightUnit: "kg", activityLevel: "", healthFocus: [], photo: "",
+      id: genId(), name: "",
+      ageYears: "", ageMonths: "",
+      breed: "", weight: "",
+      weightUnit: "kg", activityLevel: "Moderate", healthFocus: [], photo: "",
     });
     setSelectedDogId(blank.id);
     setDogs((prev) => [...prev, blank]);
@@ -232,8 +258,17 @@ export default function Home() {
           <ProfileSetup
             dogProfile={normalizeDog(selectedDog || { id: selectedDogId })}
             setDogProfile={(p) => {
-              const next = normalizeDog({ ...(selectedDog || { id: selectedDogId }), ...p });
-              setDogs((prev) => prev.map((d) => (d.id === next.id ? next : d)));
+              // ベースIDを必ず持たせる（無ければ新規発行）
+              const base = selectedDog || { id: selectedDogId || genId() };
+              const next = normalizeDog({ ...base, ...p });
+
+              // 存在すれば更新、無ければ追加
+              setSelectedDogId(next.id);
+              setDogs((prev) => {
+                const idx = prev.findIndex((d) => d.id === next.id);
+                if (idx >= 0) return prev.map((d) => (d.id === next.id ? next : d));
+                return [...prev, next];
+              });
             }}
             onContinue={() =>
               saveProfile(selectedDog || dogs.find((d) => d.id === selectedDogId))
