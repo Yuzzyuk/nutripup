@@ -1,6 +1,7 @@
 // components/ProfileSetup.jsx
 "use client";
 import React, { useEffect, useMemo, useRef } from "react";
+import { fileToDataURL } from "./utils/imageToDataUrl";
 
 const breeds = [
   "Shiba","Toy Poodle","Miniature Dachshund","Chihuahua","French Bulldog",
@@ -22,27 +23,59 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
   const safe = useMemo(() => ({
     id: dogProfile.id || "",
     name: dogProfile.name ?? "",
+    // 新規: 年・月を個別管理（互換のため age も保持）
+    ageYears: dogProfile.ageYears ?? "",
+    ageMonths: dogProfile.ageMonths ?? "",
     age: dogProfile.age ?? "",
+
     breed: dogProfile.breed ?? "",
     weight: dogProfile.weight ?? "",
     weightUnit: dogProfile.weightUnit || "kg",
     activityLevel: dogProfile.activityLevel || "Moderate",
     healthFocus: Array.isArray(dogProfile.healthFocus) ? dogProfile.healthFocus : [],
+    // 新規: 写真
+    photo: dogProfile.photo || "",
   }), [dogProfile]);
 
   const update = (patch) => setDogProfile && setDogProfile({ ...safe, ...patch });
 
+  const calcAgeDecimal = (y, m) => {
+    const yy = Number(y) || 0;
+    const mm = Math.max(0, Math.min(11, Number(m) || 0));
+    const dec = yy + mm / 12;
+    // 小数1桁に丸め（AI用の数値としても扱いやすい）
+    return Math.round(dec * 10) / 10;
+  };
+
+  const handleAgeYears = (val) => {
+    const y = val === "" ? "" : Math.max(0, Number(val));
+    const m = safe.ageMonths === "" ? 0 : Number(safe.ageMonths);
+    update({
+      ageYears: val === "" ? "" : y,
+      age: val === "" && safe.ageMonths === "" ? "" : calcAgeDecimal(y, m),
+    });
+  };
+
+  const handleAgeMonths = (val) => {
+    // 0〜11 に制限
+    const raw = Number(val);
+    const clamped = isNaN(raw) ? 0 : Math.max(0, Math.min(11, raw));
+    const y = safe.ageYears === "" ? 0 : Number(safe.ageYears);
+    update({
+      ageMonths: val === "" ? "" : clamped,
+      age: safe.ageYears === "" && val === "" ? "" : calcAgeDecimal(y, clamped),
+    });
+  };
+
   const canContinue =
     String(safe.name).trim() !== "" &&
-    String(safe.age).trim() !== "" &&
-    String(safe.weight).trim() !== "" &&
     String(safe.breed).trim() !== "" &&
-    String(safe.activityLevel).trim() !== "";
+    String(safe.activityLevel).trim() !== "" &&
+    String(safe.weight).trim() !== "" &&
+    (safe.ageYears !== "" || safe.ageMonths !== "");
 
   const nameRef = useRef(null);
-  useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
+  useEffect(() => { nameRef.current?.focus(); }, []);
 
   const toggleFocus = (id) => {
     const cur = Array.isArray(safe.healthFocus) ? safe.healthFocus : [];
@@ -50,11 +83,43 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
     update({ healthFocus: next });
   };
 
+  // 画像アップロード
+  const fileRef = useRef(null);
+  const onPick = () => fileRef.current?.click();
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const dataUrl = await fileToDataURL(f, 384, 0.9); // きれい＆軽量
+      update({ photo: dataUrl });
+    } catch {
+      alert("画像の読み込みに失敗しました。別のファイルを試してください。");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   return (
     <div className="card profile-card slide-up">
       {/* ヒーロー */}
       <div className="hero">
-        <div className="hero-icon" aria-hidden>🐕</div>
+        {/* Avatar */}
+        <div className="avatar" aria-label="Dog photo">
+          {safe.photo ? (
+            <img src={safe.photo} alt="Dog" />
+          ) : (
+            <span className="avatar-emoji" aria-hidden>🐕</span>
+          )}
+          <button type="button" className="avatar-btn" onClick={onPick}>Upload</button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={onFile}
+          />
+        </div>
+
         <div className="hero-copy">
           <h2 className="hero-title">Create your dog’s profile</h2>
           <p className="hero-sub">最短1分。後からいつでも編集できます。</p>
@@ -78,27 +143,44 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
           />
         </div>
 
-        {/* 年齢・体重（コンパクトな2列） */}
-        <div className="pair">
+        {/* 年齢（歳＋ヶ月）と体重（2列×2） */}
+        <div className="grid2">
+          {/* 年齢：歳 */}
           <div className="field">
             <label className="label-row">
               <span>Age</span>
-              <span className="subtle">years</span>
+              <span className="subtle">years / months</span>
             </label>
-            <div className="input-with-unit">
-              <input
-                inputMode="decimal"
-                type="number"
-                min="0"
-                step="0.1"
-                value={safe.age}
-                onChange={(e) => update({ age: e.target.value })}
-                placeholder="3"
-              />
-              <span className="unit">y</span>
+            <div className="age-row">
+              <div className="input-with-unit">
+                <input
+                  inputMode="decimal"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={safe.ageYears}
+                  onChange={(e) => handleAgeYears(e.target.value)}
+                  placeholder="3"
+                />
+                <span className="unit">y</span>
+              </div>
+              <div className="input-with-unit">
+                <input
+                  inputMode="decimal"
+                  type="number"
+                  min="0"
+                  max="11"
+                  step="1"
+                  value={safe.ageMonths}
+                  onChange={(e) => handleAgeMonths(e.target.value)}
+                  placeholder="6"
+                />
+                <span className="unit">m</span>
+              </div>
             </div>
           </div>
 
+          {/* 体重 */}
           <div className="field">
             <label className="label-row">
               <span>Weight</span>
@@ -185,7 +267,7 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
       <div className="cta">
         <div className="cta-left">
           {!canContinue ? (
-            <span className="cta-hint">名前 / 年齢 / 体重 / 犬種 / 活動量 を入力してください</span>
+            <span className="cta-hint">名前 / 年齢（歳またはヶ月）/ 体重 / 犬種 / 活動量 を入力してください</span>
           ) : (
             <span className="cta-ok">準備OKです</span>
           )}
@@ -206,16 +288,28 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
         .hero{
           display:flex; align-items:center; gap:12px; margin-bottom: 8px;
         }
-        .hero-icon{
-          width:52px; height:52px; border-radius:50%;
-          display:grid; place-items:center; background: var(--sand);
-          font-size:26px; box-shadow: var(--shadow-sm);
-        }
+        .hero-copy{ flex:1; }
         .hero-title{ margin:0; font-size:20px; color: var(--taupe); font-weight:800; letter-spacing:.2px; }
         .hero-sub{ margin:.5px 0 0; font-size:14px; color:#7a6a56; }
 
-        .form{ display:grid; gap:12px; }
+        /* Avatar */
+        .avatar{
+          position: relative;
+          width:68px; height:68px; border-radius:50%; overflow:hidden;
+          background: var(--sand); box-shadow: var(--shadow-sm);
+          display:grid; place-items:center;
+        }
+        .avatar img{ width:100%; height:100%; object-fit:cover; }
+        .avatar-emoji{ font-size:28px; }
+        .avatar-btn{
+          position:absolute; right:-4px; bottom:-4px;
+          padding:6px 10px; border-radius:999px; border:0; cursor:pointer;
+          font-weight:700; background:#ffffff; color:var(--taupe);
+          box-shadow: var(--shadow-sm);
+        }
+        .avatar-btn:hover{ box-shadow: var(--shadow-md); }
 
+        .form{ display:grid; gap:12px; }
         .field{ display:grid; gap:6px; }
         .label-row{
           display:flex; align-items:baseline; justify-content:space-between;
@@ -227,12 +321,10 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
         }
         .subtle{ color:#9a8b77; font-size:12px; }
 
-        .pair{
-          display:grid; grid-template-columns: 1fr 1fr; gap:10px;
-        }
-        @media (max-width: 520px){
-          .pair{ grid-template-columns: 1fr; }
-        }
+        .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+        @media (max-width: 520px){ .grid2{ grid-template-columns: 1fr; } }
+
+        .age-row{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
 
         .input-with-unit{
           display:flex; align-items:center; gap:8px;
@@ -266,9 +358,7 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
           display:inline-flex; align-items:center; gap:6px;
           border:1px solid #e5ddd2; border-radius:999px; padding:8px 12px; background:#fff; font-weight:700; color:var(--taupe);
         }
-        .chip.active{
-          background: var(--sand); border-color: var(--sand);
-        }
+        .chip.active{ background: var(--sand); border-color: var(--sand); }
         .chip-ico{ font-size:14px; }
 
         .cta{
