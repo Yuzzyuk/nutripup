@@ -111,3 +111,23 @@ input:hover, select:hover { border-color:#d9cebf; }
 @media (prefers-reduced-motion: reduce){
   .card, .btn, .fade-in, .slide-up { animation: none !important; transition: none !important; }
 }
+/* -------------------------------------------------------------------------------- */
+/* 以下、ページ下部タブ用スタイルを追加                                      */
+/* -------------------------------------------------------------------------------- */
+
+/* タブボタン */
+.tab {
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  color: var(--coffee);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.tab.active {
+  background: var(--sage);
+  color: var(--paper);
+}
