@@ -2,7 +2,6 @@
 "use client";
 import React, { useMemo, useState } from "react";
 
-/** ローカルのざっくり計算（AI失敗時フォールバック） */
 function sumMeals(meals = []) {
   const arr = Array.isArray(meals) ? meals : [];
   return arr.reduce(
@@ -16,6 +15,9 @@ function sumMeals(meals = []) {
   );
 }
 
+const stripFences = (s = "") =>
+  s.replace(/```json/gi, "").replace(/```/g, "").trim();
+
 export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }) {
   const [ai, setAi] = useState({ loading: false, error: "", data: null });
 
@@ -23,7 +25,6 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
   const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
   const name = dogProfile?.name || "Your dog";
 
-  // ---- フォールバック（AIが失敗した時だけ表示） ----
   const fallback = useMemo(() => {
     const s = [];
     if ((totals.protein || 0) < 50) s.push("Protein is a bit low — add 50–100 g lean meat (e.g., chicken breast).");
@@ -44,6 +45,18 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
       });
       if (!r.ok) throw new Error("AI request failed");
       const json = await r.json();
+
+      // サニタイズ（万一）
+      if (typeof json.summary === "string") json.summary = stripFences(json.summary);
+      if (Array.isArray(json.suggestions)) {
+        json.suggestions = json.suggestions.map((it) => ({
+          title: stripFences(it?.title || "Tip"),
+          detail: stripFences(it?.detail || ""),
+          amount: typeof it?.amount === "number" ? it.amount : null,
+          unit: it?.unit ?? null,
+        }));
+      }
+
       setAi({ loading: false, error: "", data: json });
     } catch (e) {
       setAi({ loading: false, error: "AIの提案を取得できませんでした。時間をおいて再度お試しください。", data: null });
@@ -59,7 +72,6 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
         Ask AI for personalized tips — grounded in veterinary nutrition.
       </div>
 
-      {/* KPI mini */}
       <div className="kpi" style={{ marginBottom: 12 }}>
         <div style={{ fontWeight: 800 }}>{name}</div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10, fontSize: 14, color: "var(--taupe)" }}>
@@ -76,14 +88,12 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
         {onBack && <button className="btn btn-ghost" onClick={onBack}>Back</button>}
       </div>
 
-      {/* エラー表示 */}
       {ai.error && (
         <div className="card" style={{ background: "#fff6f6", color: "#a33", marginTop: 10 }}>
           {ai.error} — showing local tips below.
         </div>
       )}
 
-      {/* AI結果 or フォールバック */}
       {data ? (
         <div className="card" style={{ marginTop: 12, background: "var(--cloud)" }}>
           <div style={{ fontWeight: 800, marginBottom: 8 }}>
@@ -106,7 +116,6 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
             ))}
           </div>
 
-          {/* 根拠（エビデンス） */}
           {(Array.isArray(data.references) && data.references.length > 0) && (
             <div className="card" style={{ marginTop: 12 }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Evidence & Guidance</div>
