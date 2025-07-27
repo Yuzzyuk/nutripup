@@ -1,24 +1,25 @@
 // components/ProfileSetup.jsx
 "use client";
-import React from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 
 const breeds = [
-  "Golden Retriever","Labrador Retriever","German Shepherd","French Bulldog",
-  "Bulldog","Poodle","Beagle","Rottweiler","Yorkshire Terrier","Dachshund",
-  "Siberian Husky","Boxer","Border Collie","Australian Shepherd","Shih Tzu","Shiba",
+  "Shiba","Toy Poodle","Miniature Dachshund","Chihuahua","French Bulldog",
+  "Golden Retriever","Labrador Retriever","German Shepherd","Border Collie",
+  "Siberian Husky","Beagle","Corgi","Pomeranian","Maltese","Yorkshire Terrier",
 ];
 
 const healthFocusOptions = [
-  { id: "skin",    label: "Skin & Coat Health", icon: "✨" },
-  { id: "joints",  label: "Joint Support",      icon: "🦴" },
-  { id: "kidneys", label: "Kidney Health",      icon: "💧" },
-  { id: "digestion", label: "Digestive Health", icon: "🌿" },
-  { id: "weight",  label: "Weight Management",  icon: "⚖️" },
-  { id: "energy",  label: "Energy & Vitality",  icon: "⚡" },
+  { id: "skin",     label: "Skin & Coat",  icon: "✨" },
+  { id: "joints",   label: "Joints",       icon: "🦴" },
+  { id: "kidneys",  label: "Kidneys",      icon: "💧" },
+  { id: "digestion",label: "Digestion",    icon: "🌿" },
+  { id: "weight",   label: "Weight",       icon: "⚖️" },
+  { id: "energy",   label: "Energy",       icon: "⚡" },
 ];
 
 export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinue }) {
-  const safe = {
+  // 正規化（includesエラー防止）
+  const safe = useMemo(() => ({
     id: dogProfile.id || "",
     name: dogProfile.name ?? "",
     age: dogProfile.age ?? "",
@@ -27,105 +28,152 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
     weightUnit: dogProfile.weightUnit || "kg",
     activityLevel: dogProfile.activityLevel || "Moderate",
     healthFocus: Array.isArray(dogProfile.healthFocus) ? dogProfile.healthFocus : [],
-  };
+  }), [dogProfile]);
 
   const update = (patch) => setDogProfile && setDogProfile({ ...safe, ...patch });
-  const canContinue = safe.name && safe.age !== "" && safe.weight !== "" && safe.breed;
+
+  const canContinue =
+    String(safe.name).trim() !== "" &&
+    String(safe.age).trim() !== "" &&
+    String(safe.weight).trim() !== "" &&
+    String(safe.breed).trim() !== "" &&
+    String(safe.activityLevel).trim() !== "";
+
+  const nameRef = useRef(null);
+  useEffect(() => {
+    nameRef.current?.focus();
+  }, []);
+
+  const toggleFocus = (id) => {
+    const cur = Array.isArray(safe.healthFocus) ? safe.healthFocus : [];
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    update({ healthFocus: next });
+  };
 
   return (
-    <div className="card space-y-6">
-      <div className="text-center">
-        <div className="text-[48px] mb-2">🐕</div>
-        <h2 className="text-2xl font-bold">Welcome to NutriPup</h2>
-        <p className="text-sm text-gray-500">Let's create your dog's profile</p>
+    <div className="card profile-card slide-up">
+      {/* ヒーロー */}
+      <div className="hero">
+        <div className="hero-icon" aria-hidden>🐕</div>
+        <div className="hero-copy">
+          <h2 className="hero-title">Create your dog’s profile</h2>
+          <p className="hero-sub">最短1分。後からいつでも編集できます。</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+      {/* フォーム */}
+      <div className="form">
+        {/* 名前 */}
+        <div className="field">
+          <label className="label-row">
+            <span>Name</span>
+            <span className="hint">必須</span>
+          </label>
           <input
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
+            ref={nameRef}
+            type="text"
             value={safe.name}
             onChange={(e) => update({ name: e.target.value })}
-            placeholder="e.g., Momo"
+            placeholder="例: Momo"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Age (years)</label>
-            <input
-              type="number"
-              className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
-              value={safe.age}
-              onChange={(e) => update({ age: e.target.value })}
-              placeholder="3"
-            />
+        {/* 年齢・体重（コンパクトな2列） */}
+        <div className="pair">
+          <div className="field">
+            <label className="label-row">
+              <span>Age</span>
+              <span className="subtle">years</span>
+            </label>
+            <div className="input-with-unit">
+              <input
+                inputMode="decimal"
+                type="number"
+                min="0"
+                step="0.1"
+                value={safe.age}
+                onChange={(e) => update({ age: e.target.value })}
+                placeholder="3"
+              />
+              <span className="unit">y</span>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Weight ({safe.weightUnit})</label>
-            <input
-              type="number"
-              className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
-              value={safe.weight}
-              onChange={(e) => update({ weight: e.target.value })}
-              placeholder="10"
-            />
+
+          <div className="field">
+            <label className="label-row">
+              <span>Weight</span>
+              <span className="subtle">{safe.weightUnit}</span>
+            </label>
+            <div className="input-with-unit">
+              <input
+                inputMode="decimal"
+                type="number"
+                min="0"
+                step="0.1"
+                value={safe.weight}
+                onChange={(e) => update({ weight: e.target.value })}
+                placeholder="8.5"
+              />
+              <span className="unit">{safe.weightUnit}</span>
+            </div>
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Breed</label>
+        {/* 犬種 */}
+        <div className="field">
+          <label className="label-row">
+            <span>Breed</span>
+            <span className="hint">必須</span>
+          </label>
           <select
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
             value={safe.breed}
             onChange={(e) => update({ breed: e.target.value })}
           >
-            <option value="">Select a breed</option>
+            <option value="">Select breed…</option>
             {breeds.map((b) => (
               <option key={b} value={b}>{b}</option>
             ))}
           </select>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Activity Level</label>
-          <div className="flex space-x-3">
-            {['Low','Moderate','High'].map((lvl) => (
+        {/* アクティビティ（セグメント） */}
+        <div className="field">
+          <label className="label-row">
+            <span>Activity level</span>
+            <span className="subtle">日常の運動量</span>
+          </label>
+          <div className="seg">
+            {["Low","Moderate","High"].map((level) => (
               <button
-                key={lvl}
-                onClick={() => update({ activityLevel: lvl })}
-                className={
-                  `flex-1 py-2 rounded-lg text-sm font-medium border 
-                  ${safe.activityLevel === lvl ? 'bg-moss text-white border-moss' : 'bg-sand text-gray-700 border-transparent'}
-                `}
+                key={level}
                 type="button"
-              >{lvl}</button>
+                className={`seg-btn ${safe.activityLevel === level ? "on" : ""}`}
+                onClick={() => update({ activityLevel: level })}
+              >
+                {level}
+              </button>
             ))}
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Health Focus (optional)</label>
-          <div className="grid grid-cols-3 gap-2">
+        {/* 健康フォーカス（チップ） */}
+        <div className="field">
+          <label className="label-row">
+            <span>Health focus</span>
+            <span className="subtle">任意</span>
+          </label>
+          <div className="chips">
             {healthFocusOptions.map((opt) => {
-              const selected = safe.healthFocus.includes(opt.id);
+              const active = (safe.healthFocus || []).includes(opt.id);
               return (
                 <button
                   key={opt.id}
-                  onClick={() => {
-                    const next = selected
-                      ? safe.healthFocus.filter(f => f !== opt.id)
-                      : [...safe.healthFocus, opt.id];
-                    update({ healthFocus: next });
-                  }}
-                  className={
-                    `flex items-center space-x-1 py-2 px-3 rounded-lg text-sm 
-                    ${selected ? 'bg-moss text-white' : 'bg-sand text-gray-700'}
-                  `}
                   type="button"
+                  className={`chip ${active ? "active" : ""}`}
+                  onClick={() => toggleFocus(opt.id)}
                 >
-                  <span>{opt.icon}</span><span>{opt.label}</span>
+                  <span className="chip-ico">{opt.icon}</span>
+                  {opt.label}
                 </button>
               );
             })}
@@ -133,16 +181,106 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
         </div>
       </div>
 
-      <div className="flex justify-end">
+      {/* フッター（固定CTA） */}
+      <div className="cta">
+        <div className="cta-left">
+          {!canContinue ? (
+            <span className="cta-hint">名前 / 年齢 / 体重 / 犬種 / 活動量 を入力してください</span>
+          ) : (
+            <span className="cta-ok">準備OKです</span>
+          )}
+        </div>
         <button
-          onClick={() => onContinue && onContinue()}
+          className="btn btn-primary"
           disabled={!canContinue}
-          className={
-            `px-6 py-3 rounded-lg font-semibold focus:outline-none 
-            ${canContinue ? 'bg-moss text-white hover:bg-moss/90' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`
-          }
-        >Continue</button>
+          onClick={() => onContinue && onContinue()}
+        >
+          Continue
+        </button>
       </div>
+
+      {/* 局所スタイル（globals.cssのトークンを使用） */}
+      <style jsx>{`
+        .profile-card { padding: 18px 18px 90px; position: relative; }
+
+        .hero{
+          display:flex; align-items:center; gap:12px; margin-bottom: 8px;
+        }
+        .hero-icon{
+          width:52px; height:52px; border-radius:50%;
+          display:grid; place-items:center; background: var(--sand);
+          font-size:26px; box-shadow: var(--shadow-sm);
+        }
+        .hero-title{ margin:0; font-size:20px; color: var(--taupe); font-weight:800; letter-spacing:.2px; }
+        .hero-sub{ margin:.5px 0 0; font-size:14px; color:#7a6a56; }
+
+        .form{ display:grid; gap:12px; }
+
+        .field{ display:grid; gap:6px; }
+        .label-row{
+          display:flex; align-items:baseline; justify-content:space-between;
+          font-weight:700; color: var(--taupe);
+        }
+        .hint{
+          font-size:12px; font-weight:700; color:#8e7b65; background:var(--sand);
+          padding:2px 8px; border-radius:999px;
+        }
+        .subtle{ color:#9a8b77; font-size:12px; }
+
+        .pair{
+          display:grid; grid-template-columns: 1fr 1fr; gap:10px;
+        }
+        @media (max-width: 520px){
+          .pair{ grid-template-columns: 1fr; }
+        }
+
+        .input-with-unit{
+          display:flex; align-items:center; gap:8px;
+          background:#fff; border:1px solid #e5ddd2; border-radius: var(--radius-md);
+          padding: 6px 10px 6px 10px;
+        }
+        .input-with-unit input{
+          border:0; padding:8px 4px; flex:1; font-size:16px;
+        }
+        .input-with-unit input:focus{ outline: none; }
+        .unit{
+          min-width:28px; height:28px; display:grid; place-items:center;
+          padding: 0 6px; border-radius: 8px; background: var(--sand); color: var(--taupe);
+          font-weight:700; font-size:12px;
+        }
+
+        .seg{
+          display:grid; grid-template-columns: repeat(3,1fr); gap:6px;
+        }
+        .seg-btn{
+          border:1px solid #e5ddd2; border-radius:12px; padding:10px 12px; font-weight:700;
+          background:#fff; color: var(--taupe);
+        }
+        .seg-btn.on{
+          background: var(--moss); color:#fff; border-color: var(--moss);
+          box-shadow: var(--shadow-sm);
+        }
+
+        .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+        .chip{
+          display:inline-flex; align-items:center; gap:6px;
+          border:1px solid #e5ddd2; border-radius:999px; padding:8px 12px; background:#fff; font-weight:700; color:var(--taupe);
+        }
+        .chip.active{
+          background: var(--sand); border-color: var(--sand);
+        }
+        .chip-ico{ font-size:14px; }
+
+        .cta{
+          position: sticky; bottom:0; left:0; right:0;
+          display:flex; align-items:center; justify-content:space-between; gap:12px;
+          padding:12px; margin: 16px -6px -6px; border-radius: 14px;
+          background: linear-gradient(180deg, rgba(255,255,255,0), var(--cloud) 28%);
+          backdrop-filter: blur(4px);
+        }
+        .cta-hint{ font-size:12px; color:#8e7b65; }
+        .cta-ok{ font-size:12px; color:#5f7a67; font-weight:700; }
+      `}</style>
     </div>
   );
 }
