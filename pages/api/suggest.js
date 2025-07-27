@@ -1,136 +1,134 @@
 // pages/api/suggest.js
+import OpenAI from "openai";
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 /**
- * 安定版 /api/suggest
- * - Chat Completions (gpt-4o-mini) を使用
- * - JSON だけを返すようプロンプトで強制
- * - 失敗時は安全なフォールバック JSON を返す
+ * 参考レンジ（ローカルの根拠）
+ * - AAFCO: 成犬/成長期の基準（DMベース、Ca:Pは 1:1〜2:1 を維持）
+ * - WSAVA: 体重・ライフステージに応じた評価と相談を推奨
+ * これらは "目安"。疾患のある個体は必ず獣医師に相談。
  */
+const REF_LINKS = [
+  {
+    title: "WSAVA Global Nutrition – Nutrition for the Life Stages of Dogs and Cats",
+    url: "https://wsava.org/wp-content/uploads/2020/01/The-WSAVA-Global-Nutrition-Toolkit-2013.pdf"
+  },
+  {
+    title: "AAFCO Dog Food Nutrient Profiles（Appendix）",
+    url: "https://www.aafco.org/wp-content/uploads/2023/05/Guidelines-for-AAFCO-Feeding-Trials-2023.pdf"
+  }
+];
 
-function buildPrompt(dog = {}, meals = []) {
+function buildPrompt(input = {}) {
+  const dog = input.dogProfile || {};
+  const meals = Array.isArray(input.meals) ? input.meals : [];
+
+  const goals = Array.isArray(dog.goals) ? dog.goals : []; // 例: ["weight", "skin", "joints"]
   const hf = Array.isArray(dog.healthFocus) ? dog.healthFocus : [];
-  const safeMeals = (Array.isArray(meals) ? meals : []).map((m) => ({
-    name: m?.name ?? "",
-    portion: Number(m?.portion) || 0,
-    protein: Number(m?.protein) || 0,
-    fat: Number(m?.fat) || 0,
-    carbs: Number(m?.carbs) || 0,
-    calories: Number(m?.calories) || 0,
-    method: m?.method ?? "",
-  }));
 
-  return `
-You are a **professional canine nutritionist** writing for affluent owners who home-cook.
-Be precise, personalized, and practical. Use warm, premium tone but stay concise.
+  const totals = meals.reduce(
+    (a, m) => {
+      a.protein  += Number(m?.protein)  || 0;
+      a.fat      += Number(m?.fat)      || 0;
+      a.carbs    += Number(m?.carbs)    || 0;
+      a.calories += Number(m?.calories) || 0;
+      return a;
+    },
+    { protein: 0, fat: 0, carbs: 0, calories: 0 }
+  );
 
-DOG PROFILE
-- name: ${dog?.name || "Dog"}
-- age_years: ${dog?.ageYears ?? dog?.age ?? ""}
-- age_months: ${dog?.ageMonths ?? ""}
-- breed: ${dog?.breed || ""}
-- weight: ${dog?.weight || ""} ${dog?.weightUnit || "kg"}
-- activity: ${dog?.activityLevel || "Moderate"}
+  // —— “プロの犬用栄養士”としての厳格プロンプト ——
+  return `You are a *professional canine nutritionist*. Produce short, trustworthy, and **personalized** coaching grounded in veterinary nutrition guidance (AAFCO profiles and WSAVA life-stage principles). Do **not** make medical claims; if disease-specific advice is needed, recommend consulting a veterinarian.
+
+DOG
+- name: ${dog.name || "Dog"}
+- age_years: ${dog.age ?? ""}
+- weight: ${dog.weight ?? ""} ${dog.weightUnit || "kg"}
+- breed: ${dog.breed || ""}
+- activity: ${dog.activityLevel || "Moderate"}
 - health_focus: ${hf.join(", ") || "none"}
-- owner_goal: ${dog?.goal || ""}
+- owner_goals: ${goals.join(", ") || "none"}
 
-TODAY MEALS (approx; per item)
-${safeMeals
-  .map(
-    (m) =>
-      `- ${m.name}: ${m.portion} g, method=${m.method}, P${m.protein}g / F${m.fat}g / C${m.carbs}g, ${m.calories} kcal`
-  )
-  .join("\n") || "- none"}
+TODAY_MEALS (approx):
+- protein_g: ${totals.protein.toFixed(1)}
+- fat_g: ${totals.fat.toFixed(1)}
+- carbs_g: ${totals.carbs.toFixed(1)}
+- kcal: ${Math.round(totals.calories)}
 
-TASK
-Return **JSON only**. No prose outside JSON. 2–4 actionable suggestions tailored to THIS dog (age/weight/activity/goal/health_focus/meals).
-If a nutrient is high or low, give **exact grams** to add/reduce when possible.
-Prefer household ingredients (e.g., chicken breast, pumpkin, sardine, eggshell calcium).
-
-SCHEMA
+OUTPUT (JSON only):
 {
-  "summary": "1 short line in Japanese",
+  "summary": "1 sentence in the user's language that praises, flags key gap/excess, and mentions the owner's goal(s).",
   "suggestions": [
-    {"title": "短い見出し(日本語)", "detail": "理由＋具体アクション(日本語)", "amount": 1.2, "unit": "g"},
+    {
+      "title": "Short title (e.g., 'Protein a touch low')",
+      "detail": "Concrete, food-first fix (e.g., lean chicken + veggies). Mention why.",
+      "amount": 0-200,               // number only if grams/kcal are relevant, else null
+      "unit": "g|kcal|null"
+    },
     ...
+  ],
+  "checks": [
+    "Ca:P should stay ~1:1 to 2:1 for general diets",
+    "Keep energy aligned with body condition & activity",
+    "If chronic disease or puppy/gestation/lactation — consult a vet"
+  ],
+  "references": [
+    {"title": "WSAVA Global Nutrition Toolkit", "url": "${REF_LINKS[0].url}"},
+    {"title": "AAFCO Dog Profiles (feeding guidance appendix)", "url": "${REF_LINKS[1].url}"}
   ]
 }
 
-RULES
-- Output valid JSON only.
-- Round grams to 0.1.
-- If input meals are empty, provide gentle starter tips (2 items).
-`;
+RULES:
+- Personalize to age, weight, activity, health_focus, owner_goals.
+- Give **2–4** suggestions max. Prefer grams and examples (egg shell powder, sardine/salmon, leafy veg, pumpkin, etc.) when appropriate.
+- Keep warm, premium tone. Be concise.`;
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
-    }
+    const { dogProfile, meals } = req.body || {};
+    const prompt = buildPrompt({ dogProfile, meals });
 
-    const { dogProfile = {}, meals = [] } = (req.body || {});
-    const userPrompt = buildPrompt(dogProfile, meals);
-
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.4,
-        messages: [
-          { role: "system", content: "You are a world-class veterinary canine nutritionist." },
-          { role: "user", content: userPrompt }
-        ],
-        response_format: { type: "json_object" } // ← JSON強制
-      }),
+    const resp = await client.responses.create({
+      model: "gpt-4.1-mini",      // 速さ/品質のバランス。必要なら gpt-4.1 等へ
+      input: prompt,
+      max_output_tokens: 400,
+      temperature: 0.4
     });
 
-    if (!r.ok) {
-      const text = await r.text().catch(() => "");
-      console.error("OpenAI error:", r.status, text);
-      return res.status(500).json({ error: "AI_SUGGESTION_FAILED" });
-    }
-
-    const data = await r.json();
-    const content = data?.choices?.[0]?.message?.content || "";
+    const text = (resp.output_text || "").trim();
     let json;
     try {
-      json = JSON.parse(content);
+      json = JSON.parse(text);
     } catch {
-      // バックアップ：JSONブロック抽出を試す
-      const m = content.match(/\{[\s\S]*\}$/);
-      json = m ? JSON.parse(m[0]) : null;
-    }
-
-    if (!json || typeof json !== "object") {
-      return res.status(200).json({
-        summary: "AI suggestions",
-        suggestions: [
-          { title: "タンパク質の最適化", detail: "鶏胸肉や白身魚でPを底上げ。100g単位で調整。", amount: 100, unit: "g" },
-          { title: "カルシウム補完", detail: "卵殻カルシウムを微量追加してバランスを取る。", amount: 1.0, unit: "g" }
+      // もしJSONが崩れていたら、最低限の形にして返す
+      json = {
+        summary: text.slice(0, 160),
+        suggestions: text
+          .split("\n")
+          .filter(Boolean)
+          .slice(0, 3)
+          .map(s => ({ title: "Tip", detail: s, amount: null, unit: null })),
+        checks: [
+          "Keep Ca:P roughly 1:1 to 2:1",
+          "Match calories to activity and body condition"
         ],
-      });
+        references: REF_LINKS
+      };
     }
 
-    // 正規化（欠けているキーを埋める）
-    const clean = {
-      summary: typeof json.summary === "string" ? json.summary : "AI suggestions",
-      suggestions: Array.isArray(json.suggestions) ? json.suggestions.slice(0, 4).map((it) => ({
-        title: it?.title ?? "Suggestion",
-        detail: it?.detail ?? "",
-        amount: typeof it?.amount === "number" ? Math.round(it.amount * 10) / 10 : undefined,
-        unit: it?.unit ?? undefined,
-      })) : [],
-    };
+    // 参照を必ず同梱（フロントで表示する用）
+    if (!Array.isArray(json.references) || !json.references.length) {
+      json.references = REF_LINKS;
+    }
 
-    return res.status(200).json(clean);
+    res.status(200).json(json);
   } catch (e) {
-    console.error("API /suggest error:", e);
-    return res.status(500).json({ error: "AI_SUGGESTION_FAILED" });
+    console.error("AI suggest error:", e?.response?.data || e.message);
+    // 失敗時はフロントのフォールバックを使わせる
+    res.status(500).json({ error: "AI_SUGGESTION_FAILED" });
   }
 }
