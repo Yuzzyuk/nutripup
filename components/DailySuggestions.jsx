@@ -19,7 +19,7 @@ const stripFences = (s = "") =>
   s.replace(/```json/gi, "").replace(/```/g, "").trim();
 
 export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }) {
-  const [ai, setAi] = useState({ loading: false, error: "", data: null });
+  const [ai, setAi] = useState({ loading: false, error: "", errorCode: "", data: null });
 
   const totals = useMemo(() => sumMeals(meals), [meals]);
   const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
@@ -36,17 +36,26 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
   }, [totals, healthFocus]);
 
   const callAI = async () => {
-    setAi({ loading: true, error: "", data: null });
+    setAi({ loading: true, error: "", errorCode: "", data: null });
     try {
       const r = await fetch("/api/suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dogProfile, meals }),
       });
-      if (!r.ok) throw new Error("AI request failed");
+
+      // 失敗時でもサーバーの詳細を拾う
+      if (!r.ok) {
+        let payload = {};
+        try { payload = await r.json(); } catch { /* ignore */ }
+        const msg = payload?.message || "AIの提案を取得できませんでした。時間をおいて再度お試しください。";
+        const code = payload?.code || "";
+        setAi({ loading: false, error: msg, errorCode: code, data: null });
+        return;
+      }
+
       const json = await r.json();
 
-      // サニタイズ（万一）
       if (typeof json.summary === "string") json.summary = stripFences(json.summary);
       if (Array.isArray(json.suggestions)) {
         json.suggestions = json.suggestions.map((it) => ({
@@ -57,13 +66,26 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
         }));
       }
 
-      setAi({ loading: false, error: "", data: json });
+      setAi({ loading: false, error: "", errorCode: "", data: json });
     } catch (e) {
-      setAi({ loading: false, error: "AIの提案を取得できませんでした。時間をおいて再度お試しください。", data: null });
+      setAi({
+        loading: false,
+        error: "ネットワークまたはサーバーで問題が発生しました。",
+        errorCode: "",
+        data: null,
+      });
     }
   };
 
   const data = ai.data;
+
+  // エラーの種類別にヒントを出す
+  const helper =
+    ai.errorCode === "insufficient_quota"
+      ? "OpenAIのクレジット／プランの上限に達しています。請求設定または別モデル／キーをご確認ください。"
+      : ai.errorCode === "missing_api_key"
+      ? "サーバーに OPENAI_API_KEY が設定されていません（VercelのEnvironment Variablesで設定→再デプロイ）。"
+      : "";
 
   return (
     <div className="card">
@@ -90,7 +112,10 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
 
       {ai.error && (
         <div className="card" style={{ background: "#fff6f6", color: "#a33", marginTop: 10 }}>
-          {ai.error} — showing local tips below.
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            {ai.error}
+          </div>
+          {helper && <div style={{ fontSize: 13 }}>{helper}</div>}
         </div>
       )}
 
