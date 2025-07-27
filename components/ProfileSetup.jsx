@@ -18,7 +18,6 @@ const healthFocusOptions = [
 ];
 
 export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinue }) {
-  // ここで “必ず配列＆既定値あり” に正規化（includesのエラー防止）
   const safe = {
     id: dogProfile.id || "",
     name: dogProfile.name ?? "",
@@ -31,56 +30,58 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
   };
 
   const update = (patch) => setDogProfile && setDogProfile({ ...safe, ...patch });
-
-  const canContinue =
-    safe.name && safe.age !== "" && safe.weight !== "" && safe.breed && safe.activityLevel;
+  const canContinue = safe.name && safe.age !== "" && safe.weight !== "" && safe.breed;
 
   return (
-    <div className="card">
-      <div style={{ textAlign: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 40, marginBottom: 8 }}>🐕</div>
-        <h2 style={{ margin: 0 }}>Welcome to NutriPup</h2>
-        <div style={{ color: "var(--taupe)" }}>Let's create your dog's profile</div>
+    <div className="card space-y-6">
+      <div className="text-center">
+        <div className="text-[48px] mb-2">🐕</div>
+        <h2 className="text-2xl font-bold">Welcome to NutriPup</h2>
+        <p className="text-sm text-gray-500">Let's create your dog's profile</p>
       </div>
 
-      <div className="grid" style={{ gap: 12 }}>
+      <div className="grid grid-cols-1 gap-4">
         <div>
-          <label>Name</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
           <input
+            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
             value={safe.name}
             onChange={(e) => update({ name: e.target.value })}
-            placeholder="Dog name"
+            placeholder="e.g., Momo"
           />
         </div>
 
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label>Age (years)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Age (years)</label>
             <input
               type="number"
+              className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
               value={safe.age}
               onChange={(e) => update({ age: e.target.value })}
-              placeholder="Age"
+              placeholder="3"
             />
           </div>
           <div>
-            <label>Weight ({safe.weightUnit})</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Weight ({safe.weightUnit})</label>
             <input
               type="number"
+              className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
               value={safe.weight}
               onChange={(e) => update({ weight: e.target.value })}
-              placeholder="Weight"
+              placeholder="10"
             />
           </div>
         </div>
 
         <div>
-          <label>Breed</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Breed</label>
           <select
+            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-moss"
             value={safe.breed}
             onChange={(e) => update({ breed: e.target.value })}
           >
-            <option value="">Select breed</option>
+            <option value="">Select a breed</option>
             {breeds.map((b) => (
               <option key={b} value={b}>{b}</option>
             ))}
@@ -88,49 +89,59 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
         </div>
 
         <div>
-          <label>Activity Level</label>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-            {["Low","Moderate","High"].map((level) => (
+          <label className="block text-sm font-medium text-gray-700 mb-1">Activity Level</label>
+          <div className="flex space-x-3">
+            {['Low','Moderate','High'].map((lvl) => (
               <button
-                key={level}
-                className={`btn ${safe.activityLevel === level ? "btn-primary" : "btn-ghost"}`}
-                onClick={() => update({ activityLevel: level })}
-              >
-                {level}
-              </button>
+                key={lvl}
+                onClick={() => update({ activityLevel: lvl })}
+                className={
+                  `flex-1 py-2 rounded-lg text-sm font-medium border 
+                  ${safe.activityLevel === lvl ? 'bg-moss text-white border-moss' : 'bg-sand text-gray-700 border-transparent'}
+                `}
+                type="button"
+              >{lvl}</button>
             ))}
           </div>
         </div>
 
         <div>
-          <label>Health Focus (optional)</label>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Health Focus (optional)</label>
+          <div className="grid grid-cols-3 gap-2">
             {healthFocusOptions.map((opt) => {
-              const selected = (safe.healthFocus || []).includes(opt.id); // ← 安全
+              const selected = safe.healthFocus.includes(opt.id);
               return (
                 <button
                   key={opt.id}
-                  className={`btn ${selected ? "btn-primary" : "btn-ghost"}`}
                   onClick={() => {
-                    const cur = Array.isArray(safe.healthFocus) ? safe.healthFocus : [];
-                    const next = selected ? cur.filter((f) => f !== opt.id) : [...cur, opt.id];
+                    const next = selected
+                      ? safe.healthFocus.filter(f => f !== opt.id)
+                      : [...safe.healthFocus, opt.id];
                     update({ healthFocus: next });
                   }}
+                  className={
+                    `flex items-center space-x-1 py-2 px-3 rounded-lg text-sm 
+                    ${selected ? 'bg-moss text-white' : 'bg-sand text-gray-700'}
+                  `}
+                  type="button"
                 >
-                  <span style={{ marginRight: 6 }}>{opt.icon}</span>{opt.label}
+                  <span>{opt.icon}</span><span>{opt.label}</span>
                 </button>
               );
             })}
           </div>
         </div>
+      </div>
 
+      <div className="flex justify-end">
         <button
-          className="btn btn-primary"
-          disabled={!canContinue}
           onClick={() => onContinue && onContinue()}
-        >
-          Continue
-        </button>
+          disabled={!canContinue}
+          className={
+            `px-6 py-3 rounded-lg font-semibold focus:outline-none 
+            ${canContinue ? 'bg-moss text-white hover:bg-moss/90' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`
+          }
+        >Continue</button>
       </div>
     </div>
   );
