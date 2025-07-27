@@ -3,11 +3,12 @@
 import { useState } from "react";
 import Layout from "../components/Layout";
 import ProfileSetup from "../components/ProfileSetup";
+import MealInput from "../components/MealInput";
 
 export default function Home() {
   const [step, setStep] = useState("profile");
 
-  // プロフィールの状態をここで持つ（子コンポーネントに渡す）
+  // プロフィール
   const [dogProfile, setDogProfile] = useState({
     name: "",
     age: "",
@@ -17,6 +18,9 @@ export default function Home() {
     activityLevel: "",
     healthFocus: [],
   });
+
+  // 今日の食事リスト
+  const [meals, setMeals] = useState([]);
 
   return (
     <Layout step={step} setStep={setStep}>
@@ -29,26 +33,23 @@ export default function Home() {
       )}
 
       {step === "meals" && (
-        <section className="card">
-          <h2 style={{ marginTop: 0 }}>Add today’s meal 🍽️</h2>
-          <p>ここに食材検索＆分量入力UIを作成します（次のSTEPで追加）。</p>
-          <div style={{ marginTop: 12, fontSize: 14, color: "var(--taupe)" }}>
-            <strong>Profile preview:</strong>{" "}
-            {dogProfile.name
-              ? `${dogProfile.name} • ${dogProfile.age} yrs • ${dogProfile.weight}${dogProfile.weightUnit} • ${dogProfile.breed} • ${dogProfile.activityLevel}`
-              : "未入力"}
-          </div>
-          <button className="btn btn-ghost" onClick={() => setStep("summary")} style={{ marginTop: 12 }}>
-            Go to Summary
-          </button>
-        </section>
+        <MealInput
+          meals={meals}
+          setMeals={setMeals}
+          dogName={dogProfile.name}
+          onNext={() => setStep("summary")}
+          onBack={() => setStep("profile")}
+        />
       )}
 
       {step === "summary" && (
         <section className="card">
           <h2 style={{ marginTop: 0 }}>Nutrition Summary 📊</h2>
-          <p>レーダーチャートをこのセクションに配置します（recharts使用）。</p>
-          <button className="btn btn-ghost" onClick={() => setStep("suggestions")}>
+          <p>次のSTEPでレーダーチャート（recharts）を表示して、%達成度を見せます。</p>
+          <div style={{ fontSize: 14, color: "var(--taupe)" }}>
+            Logged meals today: <strong>{meals.length}</strong>
+          </div>
+          <button className="btn btn-ghost" onClick={() => setStep("suggestions")} style={{ marginTop: 8 }}>
             See Tips
           </button>
         </section>
