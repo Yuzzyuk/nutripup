@@ -35,7 +35,7 @@ export default function Home() {
   const [toast, setToast] = useState({ show: false, message: "" });
 
   // 多頭データ
-  const [dogs, setDogs] = useState([]); // [{id,name,weight,weightUnit,activityLevel,...}]
+  const [dogs, setDogs] = useState([]); // [{id,name,weight,weightUnit,activityLevel,photo,...}]
   const [selectedDogId, setSelectedDogId] = useState("");
   const selectedDog = useMemo(() => dogs.find(d => d.id === selectedDogId) || null, [dogs, selectedDogId]);
 
@@ -65,6 +65,7 @@ export default function Home() {
             weightUnit: p.weightUnit || "kg",
             activityLevel: p.activityLevel || "Moderate",
             healthFocus: p.healthFocus || [],
+            photo: p.photo || "", // 互換
           };
           list = [migrated];
           localStorage.setItem(DOGS_KEY, JSON.stringify(list));
@@ -74,7 +75,6 @@ export default function Home() {
 
       setDogs(list || []);
       setSelectedDogId(rawSelected || (list[0]?.id || ""));
-      // 最初は home へ（犬がいなければ profile を促す）
       setStep(list && list.length > 0 ? "home" : "profile");
     } catch {}
   }, []);
@@ -112,7 +112,6 @@ export default function Home() {
 
   /* ---- 犬の CRUD ---- */
   const addDog = () => {
-    // 空のプロファイルで ProfileSetup へ
     const blank = {
       id: genId(),
       name: "",
@@ -122,15 +121,14 @@ export default function Home() {
       weightUnit: "kg",
       activityLevel: "",
       healthFocus: [],
+      photo: "",
     };
-    // 一時的に選択して編集へ
     setSelectedDogId(blank.id);
     setDogs(prev => [...prev, blank]);
     setStep("profile");
   };
 
   const editDog = (dog) => {
-    // ProfileSetup側で保存するので、ここでは選択して遷移だけ
     setSelectedDogId(dog.id);
     setStep("profile");
   };
@@ -152,6 +150,12 @@ export default function Home() {
     setStep("home");
   };
 
+  // ✅ 写真更新（DogsManager から呼ばれる）
+  const updateDogPhoto = (id, dataUrl) => {
+    setDogs(prev => prev.map(d => d.id === id ? { ...d, photo: dataUrl } : d));
+    setToast({ show: true, message: "Photo updated ✅" });
+  };
+
   /* ---- ProfileSetup からの保存（追加/編集共通） ---- */
   const saveProfile = (updated) => {
     setDogs(prev => prev.map(d => d.id === updated.id ? { ...d, ...updated } : d));
@@ -165,8 +169,6 @@ export default function Home() {
     if (!selectedDog) return;
     if (!meals || meals.length === 0) return;
     const nowIso = new Date().toISOString();
-    // NutritionSummaryと同じ計算を使いたいが、ここではスコアだけ概算：Summary画面で正確に可視化される
-    // シンプルに 8軸の平均を再計算せず、Summary側に任せてもOK。ここでは 0 としておき、HistoryChartは日付だけでも表示可能。
     const entry = { date: nowIso, meals: meals, score: 0 };
     setHistory(prev => {
       const next = [...prev];
@@ -202,6 +204,7 @@ export default function Home() {
             onAddNew={addDog}
             onEdit={editDog}
             onDelete={deleteDog}
+            onUpdatePhoto={updateDogPhoto}   // ← 追加
             onClose={() => setStep(selectedDog ? "home" : "profile")}
           />
         )}
@@ -211,7 +214,6 @@ export default function Home() {
           <ProfileSetup
             dogProfile={selectedDog || { id: selectedDogId }}
             setDogProfile={(p) => {
-              // フォーム入力の変化は一時的に dogs に反映（id が一致する対象を更新）
               setDogs(prev => prev.map(d => d.id === (selectedDog?.id || selectedDogId) ? { ...d, ...p } : d));
             }}
             onContinue={() => saveProfile(selectedDog || dogs.find(d => d.id === selectedDogId))}
@@ -258,7 +260,7 @@ export default function Home() {
               最近のスコア推移と日別ログ
             </div>
             <div style={{ marginBottom: 12 }}>
-              {/* 既存のHistoryChart再利用 */}
+              {/* HomeDashboard の下半分（HistoryChart）を再利用 */}
               <HomeDashboard
                 dogProfile={selectedDog}
                 meals={meals}
@@ -269,7 +271,6 @@ export default function Home() {
               />
             </div>
 
-            {/* 今日の記録保存ショートカット */}
             <div className="card" style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-ghost" onClick={() => setStep("home")}>Back to Home</button>
               <button className="btn btn-primary" onClick={saveToday} style={{ flex: 1 }}>
