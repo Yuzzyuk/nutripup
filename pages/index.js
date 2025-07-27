@@ -268,19 +268,17 @@ export default function Home() {
         )}
 
         {/* 追加/編集 プロフィール（完了後はHomeへ戻る） */}
-        {step === "profile" && (
-          <ProfileSetup
-            dogProfile={selectedDog || { id: selectedDogId }}
-            setDogProfile={(p) => {
-              // 入力中も常に正規化して保持（includesエラー防止）
-              const next = normalizeDog({ ...(selectedDog || { id: selectedDogId }), ...p });
-              setDogs((prev) => prev.map((d) => (d.id === next.id ? next : d)));
-            }}
-            onContinue={() =>
-              saveProfile(selectedDog || dogs.find((d) => d.id === selectedDogId))
-            }
-          />
-        )}
+       {step === "profile" && (
+  <ProfileSetup
+-   dogProfile={selectedDog || { id: selectedDogId }}
++   dogProfile={normalizeDog(selectedDog || { id: selectedDogId })}
+    setDogProfile={(p) => {
+      const next = normalizeDog({ ...(selectedDog || { id: selectedDogId }), ...p });
+      setDogs(prev => prev.map(d => d.id === next.id ? next : d));
+    }}
+    onContinue={() => saveProfile(selectedDog || dogs.find(d => d.id === selectedDogId))}
+  />
+)}
 
         {/* ホーム（ダッシュボード） */}
         {step === "home" && selectedDog && (
