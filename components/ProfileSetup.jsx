@@ -10,16 +10,16 @@ const breeds = [
 ];
 
 const healthFocusOptions = [
-  { id: "skin",    label: "Skin & Coat Health", icon: "✨" },
-  { id: "joints",  label: "Joint Support",      icon: "🦴" },
-  { id: "kidneys", label: "Kidney Health",      icon: "💧" },
-  { id: "digestion", label: "Digestive Health", icon: "🌿" },
-  { id: "weight",  label: "Weight Management",  icon: "⚖️" },
-  { id: "energy",  label: "Energy & Vitality",  icon: "⚡" },
+  { id: "skin",    label: "Skin & Coat", icon: "✨" },
+  { id: "joints",  label: "Joints",      icon: "🦴" },
+  { id: "kidneys", label: "Kidneys",     icon: "💧" },
+  { id: "digestion", label: "Digestion", icon: "🌿" },
+  { id: "weight",  label: "Weight",      icon: "⚖️" },
+  { id: "energy",  label: "Energy",      icon: "⚡" },
 ];
 
 export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinue }) {
-  // 正規化（includesエラー防止 & 既定値）
+  // 正規化
   const safe = {
     id: dogProfile.id || "",
     name: dogProfile.name ?? "",
@@ -32,7 +32,6 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
     healthFocus: Array.isArray(dogProfile.healthFocus) ? dogProfile.healthFocus : [],
     photo: dogProfile.photo || "",
   };
-
   const update = (patch) => setDogProfile && setDogProfile({ ...safe, ...patch });
 
   const canContinue =
@@ -58,31 +57,24 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
     }
   };
 
-  // Months 選択肢
   const months = Array.from({ length: 12 }, (_, i) => i); // 0..11
 
   return (
-    <div className="card">
-      {/* ヘッダ */}
-      <div style={{ textAlign: "center", marginBottom: 12 }}>
+    <div className="card fade-in">
+      {/* ヘッダー */}
+      <div className="header-block">
         <div style={{ fontSize: 40, marginBottom: 8 }}>🐕</div>
-        <h2 style={{ margin: 0 }}>Welcome to NutriPup</h2>
-        <div style={{ color: "var(--taupe)" }}>Let's create your dog's profile</div>
+        <h2 className="title">Welcome to NutriPup</h2>
+        <div className="subtitle">Let's create your dog's profile</div>
       </div>
 
-      {/* アバター + ボタン */}
-      <div className="card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div
-          style={{
-            width: 72, height: 72, borderRadius: "50%", overflow: "hidden",
-            background: "var(--sand)", display: "flex", alignItems: "center", justifyContent: "center",
-            border: "1px solid rgba(0,0,0,.06)"
-          }}
-        >
+      {/* アバター行 */}
+      <div className="avatar-block" style={{ marginTop: 6, marginBottom: 6 }}>
+        <div className="avatar" aria-label="Dog avatar">
           {safe.photo ? (
-            <img src={safe.photo} alt="Dog" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img src={safe.photo} alt="Dog" />
           ) : (
-            <span style={{ fontSize: 36 }}>🐶</span>
+            <span style={{ fontSize: 34 }}>🐶</span>
           )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -91,35 +83,27 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
             <button className="btn btn-ghost" onClick={() => update({ photo: "" })}>Remove</button>
           )}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          onChange={onFile}
-          style={{ display: "none" }}
-        />
+        <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
       </div>
 
-      {/* 入力フォーム */}
-      <div className="grid" style={{ gap: 12 }}>
+      {/* フォーム */}
+      <div className="form" style={{ marginTop: 6 }}>
         {/* Name */}
         <div>
           <label>Name</label>
           <input
             value={safe.name}
             onChange={(e) => update({ name: e.target.value })}
-            placeholder="Dog name"
+            placeholder="e.g., Momo"
           />
         </div>
 
-        {/* Age: Years / Months */}
+        {/* Age */}
         <div>
           <label>Age</label>
-          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div className="row-2">
             <input
-              type="number"
-              inputMode="numeric"
-              min="0" max="25"
+              type="number" inputMode="numeric" min="0" max="25"
               placeholder="Years"
               value={safe.ageYears}
               onChange={(e) => {
@@ -132,24 +116,18 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
               onChange={(e) => update({ ageMonths: e.target.value === "" ? "" : Number(e.target.value) })}
             >
               <option value="">Months</option>
-              {months.map((m) => (
-                <option key={m} value={m}>{m} months</option>
-              ))}
+              {months.map((m) => <option key={m} value={m}>{m} months</option>)}
             </select>
           </div>
-          <div style={{ color: "var(--taupe)", fontSize: 12, marginTop: 4 }}>
-            0–25歳、月齢は0–11ヶ月まで入力できます。
-          </div>
+          <div className="hint">0–25歳、月齢は0–11ヶ月まで入力できます。</div>
         </div>
 
         {/* Weight */}
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div className="row-2">
           <div>
             <label>Weight ({safe.weightUnit})</label>
             <input
-              type="number"
-              inputMode="decimal"
-              min="0" step="0.1"
+              type="number" inputMode="decimal" min="0" step="0.1"
               value={safe.weight}
               onChange={(e) => update({ weight: e.target.value })}
               placeholder="10"
@@ -157,10 +135,7 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
           </div>
           <div>
             <label>Unit</label>
-            <select
-              value={safe.weightUnit}
-              onChange={(e) => update({ weightUnit: e.target.value })}
-            >
+            <select value={safe.weightUnit} onChange={(e) => update({ weightUnit: e.target.value })}>
               <option value="kg">kg</option>
               <option value="lb">lb</option>
             </select>
@@ -170,25 +145,20 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
         {/* Breed */}
         <div>
           <label>Breed</label>
-          <select
-            value={safe.breed}
-            onChange={(e) => update({ breed: e.target.value })}
-          >
+          <select value={safe.breed} onChange={(e) => update({ breed: e.target.value })}>
             <option value="">Select breed</option>
-            {breeds.map((b) => (
-              <option key={b} value={b}>{b}</option>
-            ))}
+            {breeds.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
 
-        {/* Activity */}
+        {/* Activity Level (segmented) */}
         <div>
           <label>Activity Level</label>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+          <div className="segmented">
             {["Low","Moderate","High"].map((level) => (
               <button
                 key={level}
-                className={`btn ${safe.activityLevel === level ? "btn-primary" : "btn-ghost"}`}
+                className={`item ${safe.activityLevel === level ? "active" : ""}`}
                 onClick={() => update({ activityLevel: level })}
                 type="button"
               >
@@ -201,16 +171,16 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
         {/* Health Focus */}
         <div>
           <label>Health Focus (optional)</label>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
+          <div className="chips">
             {healthFocusOptions.map((opt) => {
-              const selected = (safe.healthFocus || []).includes(opt.id);
+              const on = (safe.healthFocus || []).includes(opt.id);
               return (
                 <button
                   key={opt.id}
-                  className={`btn ${selected ? "btn-primary" : "btn-ghost"}`}
+                  className={`chip ${on ? "on" : ""}`}
                   onClick={() => {
                     const cur = Array.isArray(safe.healthFocus) ? safe.healthFocus : [];
-                    const next = selected ? cur.filter((f) => f !== opt.id) : [...cur, opt.id];
+                    const next = on ? cur.filter((f) => f !== opt.id) : [...cur, opt.id];
                     update({ healthFocus: next });
                   }}
                   type="button"
@@ -222,14 +192,18 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
           </div>
         </div>
 
-        {/* Continue */}
-        <button
-          className="btn btn-primary"
-          disabled={!canContinue}
-          onClick={() => onContinue && onContinue()}
-        >
-          Continue
-        </button>
+        {/* CTA */}
+        <div className="sticky-cta">
+          <button className="btn btn-ghost" type="button" onClick={() => update({})}>Later</button>
+          <button
+            className="btn btn-primary"
+            disabled={!canContinue}
+            onClick={() => onContinue && onContinue()}
+            style={{ flex: 1 }}
+          >
+            Save & Continue
+          </button>
+        </div>
       </div>
     </div>
   );
