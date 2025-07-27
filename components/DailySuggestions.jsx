@@ -1,6 +1,7 @@
 // components/DailySuggestions.jsx
 "use client";
 import React, { useMemo } from "react";
+import AiSuggestions from "./AiSuggestions"; // ← 追加
 
 // “念のため”のセーフ関数
 const A = (v) => (Array.isArray(v) ? v : []);
@@ -107,19 +108,25 @@ export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }
   }, [totals, healthFocus]);
 
   return (
-    <div className="card">
-      <h2 style={{ marginTop: 0 }}>Daily Suggestions</h2>
-      <div className="grid" style={{ gap: 8 }}>
-        {suggestions.map((msg, i) => (
-          <div key={i} className="card" style={{ padding: 12 }}>
-            {msg}
-          </div>
-        ))}
+    <div className="grid" style={{ gap: 12 }}>
+      {/* まずローカル（即時）サジェスト */}
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Daily Suggestions</h2>
+        <div className="grid" style={{ gap: 8 }}>
+          {suggestions.map((msg, i) => (
+            <div key={i} className="card" style={{ padding: 12, background: "var(--cloud)" }}>
+              {msg}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          {onBack && <button className="btn btn-ghost" onClick={onBack}>Back</button>}
+        </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        {onBack && <button className="btn btn-ghost" onClick={onBack}>Back</button>}
-      </div>
+      {/* 次に AI（ボタンで生成） */}
+      <AiSuggestions meals={meals} dogProfile={dogProfile} />
     </div>
   );
 }
