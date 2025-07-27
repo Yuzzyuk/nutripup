@@ -1,97 +1,56 @@
 // components/ProfileSetup.jsx
 "use client";
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useRef } from "react";
 import { fileToDataURL } from "./utils/imageToDataUrl";
 
 const breeds = [
-  "Shiba","Toy Poodle","Miniature Dachshund","Chihuahua","French Bulldog",
-  "Golden Retriever","Labrador Retriever","German Shepherd","Border Collie",
-  "Siberian Husky","Beagle","Corgi","Pomeranian","Maltese","Yorkshire Terrier",
+  "Golden Retriever","Labrador Retriever","German Shepherd","French Bulldog",
+  "Bulldog","Poodle","Beagle","Rottweiler","Yorkshire Terrier","Dachshund",
+  "Siberian Husky","Boxer","Border Collie","Australian Shepherd","Shih Tzu","Shiba",
 ];
 
 const healthFocusOptions = [
-  { id: "skin",     label: "Skin & Coat",  icon: "✨" },
-  { id: "joints",   label: "Joints",       icon: "🦴" },
-  { id: "kidneys",  label: "Kidneys",      icon: "💧" },
-  { id: "digestion",label: "Digestion",    icon: "🌿" },
-  { id: "weight",   label: "Weight",       icon: "⚖️" },
-  { id: "energy",   label: "Energy",       icon: "⚡" },
+  { id: "skin",    label: "Skin & Coat Health", icon: "✨" },
+  { id: "joints",  label: "Joint Support",      icon: "🦴" },
+  { id: "kidneys", label: "Kidney Health",      icon: "💧" },
+  { id: "digestion", label: "Digestive Health", icon: "🌿" },
+  { id: "weight",  label: "Weight Management",  icon: "⚖️" },
+  { id: "energy",  label: "Energy & Vitality",  icon: "⚡" },
 ];
 
 export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinue }) {
-  // 正規化（includesエラー防止）
-  const safe = useMemo(() => ({
+  // 正規化（includesエラー防止 & 既定値）
+  const safe = {
     id: dogProfile.id || "",
     name: dogProfile.name ?? "",
-    // 新規: 年・月を個別管理（互換のため age も保持）
     ageYears: dogProfile.ageYears ?? "",
     ageMonths: dogProfile.ageMonths ?? "",
-    age: dogProfile.age ?? "",
-
     breed: dogProfile.breed ?? "",
     weight: dogProfile.weight ?? "",
     weightUnit: dogProfile.weightUnit || "kg",
     activityLevel: dogProfile.activityLevel || "Moderate",
     healthFocus: Array.isArray(dogProfile.healthFocus) ? dogProfile.healthFocus : [],
-    // 新規: 写真
     photo: dogProfile.photo || "",
-  }), [dogProfile]);
+  };
 
   const update = (patch) => setDogProfile && setDogProfile({ ...safe, ...patch });
 
-  const calcAgeDecimal = (y, m) => {
-    const yy = Number(y) || 0;
-    const mm = Math.max(0, Math.min(11, Number(m) || 0));
-    const dec = yy + mm / 12;
-    // 小数1桁に丸め（AI用の数値としても扱いやすい）
-    return Math.round(dec * 10) / 10;
-  };
-
-  const handleAgeYears = (val) => {
-    const y = val === "" ? "" : Math.max(0, Number(val));
-    const m = safe.ageMonths === "" ? 0 : Number(safe.ageMonths);
-    update({
-      ageYears: val === "" ? "" : y,
-      age: val === "" && safe.ageMonths === "" ? "" : calcAgeDecimal(y, m),
-    });
-  };
-
-  const handleAgeMonths = (val) => {
-    // 0〜11 に制限
-    const raw = Number(val);
-    const clamped = isNaN(raw) ? 0 : Math.max(0, Math.min(11, raw));
-    const y = safe.ageYears === "" ? 0 : Number(safe.ageYears);
-    update({
-      ageMonths: val === "" ? "" : clamped,
-      age: safe.ageYears === "" && val === "" ? "" : calcAgeDecimal(y, clamped),
-    });
-  };
-
   const canContinue =
-    String(safe.name).trim() !== "" &&
-    String(safe.breed).trim() !== "" &&
-    String(safe.activityLevel).trim() !== "" &&
-    String(safe.weight).trim() !== "" &&
-    (safe.ageYears !== "" || safe.ageMonths !== "");
-
-  const nameRef = useRef(null);
-  useEffect(() => { nameRef.current?.focus(); }, []);
-
-  const toggleFocus = (id) => {
-    const cur = Array.isArray(safe.healthFocus) ? safe.healthFocus : [];
-    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-    update({ healthFocus: next });
-  };
+    safe.name &&
+    (safe.ageYears !== "" || safe.ageMonths !== "") &&
+    safe.weight !== "" &&
+    safe.breed &&
+    safe.activityLevel;
 
   // 画像アップロード
   const fileRef = useRef(null);
-  const onPick = () => fileRef.current?.click();
+  const onPickImage = () => fileRef.current?.click();
   const onFile = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
     try {
-      const dataUrl = await fileToDataURL(f, 384, 0.9); // きれい＆軽量
-      update({ photo: dataUrl });
+      const url = await fileToDataURL(file, 384, 0.9);
+      update({ photo: url });
     } catch {
       alert("画像の読み込みに失敗しました。別のファイルを試してください。");
     } finally {
@@ -99,138 +58,139 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
     }
   };
 
-  return (
-    <div className="card profile-card slide-up">
-      {/* ヒーロー */}
-      <div className="hero">
-        {/* Avatar */}
-        <div className="avatar" aria-label="Dog photo">
-          {safe.photo ? (
-            <img src={safe.photo} alt="Dog" />
-          ) : (
-            <span className="avatar-emoji" aria-hidden>🐕</span>
-          )}
-          <button type="button" className="avatar-btn" onClick={onPick}>Upload</button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            style={{ display: "none" }}
-            onChange={onFile}
-          />
-        </div>
+  // Months 選択肢
+  const months = Array.from({ length: 12 }, (_, i) => i); // 0..11
 
-        <div className="hero-copy">
-          <h2 className="hero-title">Create your dog’s profile</h2>
-          <p className="hero-sub">最短1分。後からいつでも編集できます。</p>
-        </div>
+  return (
+    <div className="card">
+      {/* ヘッダ */}
+      <div style={{ textAlign: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🐕</div>
+        <h2 style={{ margin: 0 }}>Welcome to NutriPup</h2>
+        <div style={{ color: "var(--taupe)" }}>Let's create your dog's profile</div>
       </div>
 
-      {/* フォーム */}
-      <div className="form">
-        {/* 名前 */}
-        <div className="field">
-          <label className="label-row">
-            <span>Name</span>
-            <span className="hint">必須</span>
-          </label>
+      {/* アバター + ボタン */}
+      <div className="card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            width: 72, height: 72, borderRadius: "50%", overflow: "hidden",
+            background: "var(--sand)", display: "flex", alignItems: "center", justifyContent: "center",
+            border: "1px solid rgba(0,0,0,.06)"
+          }}
+        >
+          {safe.photo ? (
+            <img src={safe.photo} alt="Dog" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <span style={{ fontSize: 36 }}>🐶</span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost" onClick={onPickImage}>Upload Photo</button>
+          {safe.photo && (
+            <button className="btn btn-ghost" onClick={() => update({ photo: "" })}>Remove</button>
+          )}
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          onChange={onFile}
+          style={{ display: "none" }}
+        />
+      </div>
+
+      {/* 入力フォーム */}
+      <div className="grid" style={{ gap: 12 }}>
+        {/* Name */}
+        <div>
+          <label>Name</label>
           <input
-            ref={nameRef}
-            type="text"
             value={safe.name}
             onChange={(e) => update({ name: e.target.value })}
-            placeholder="例: Momo"
+            placeholder="Dog name"
           />
         </div>
 
-        {/* 年齢（歳＋ヶ月）と体重（2列×2） */}
-        <div className="grid2">
-          {/* 年齢：歳 */}
-          <div className="field">
-            <label className="label-row">
-              <span>Age</span>
-              <span className="subtle">years / months</span>
-            </label>
-            <div className="age-row">
-              <div className="input-with-unit">
-                <input
-                  inputMode="decimal"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={safe.ageYears}
-                  onChange={(e) => handleAgeYears(e.target.value)}
-                  placeholder="3"
-                />
-                <span className="unit">y</span>
-              </div>
-              <div className="input-with-unit">
-                <input
-                  inputMode="decimal"
-                  type="number"
-                  min="0"
-                  max="11"
-                  step="1"
-                  value={safe.ageMonths}
-                  onChange={(e) => handleAgeMonths(e.target.value)}
-                  placeholder="6"
-                />
-                <span className="unit">m</span>
-              </div>
-            </div>
+        {/* Age: Years / Months */}
+        <div>
+          <label>Age</label>
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0" max="25"
+              placeholder="Years"
+              value={safe.ageYears}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "" || (+v >= 0 && +v <= 25)) update({ ageYears: v });
+              }}
+            />
+            <select
+              value={safe.ageMonths === "" ? "" : String(safe.ageMonths)}
+              onChange={(e) => update({ ageMonths: e.target.value === "" ? "" : Number(e.target.value) })}
+            >
+              <option value="">Months</option>
+              {months.map((m) => (
+                <option key={m} value={m}>{m} months</option>
+              ))}
+            </select>
           </div>
-
-          {/* 体重 */}
-          <div className="field">
-            <label className="label-row">
-              <span>Weight</span>
-              <span className="subtle">{safe.weightUnit}</span>
-            </label>
-            <div className="input-with-unit">
-              <input
-                inputMode="decimal"
-                type="number"
-                min="0"
-                step="0.1"
-                value={safe.weight}
-                onChange={(e) => update({ weight: e.target.value })}
-                placeholder="8.5"
-              />
-              <span className="unit">{safe.weightUnit}</span>
-            </div>
+          <div style={{ color: "var(--taupe)", fontSize: 12, marginTop: 4 }}>
+            0–25歳、月齢は0–11ヶ月まで入力できます。
           </div>
         </div>
 
-        {/* 犬種 */}
-        <div className="field">
-          <label className="label-row">
-            <span>Breed</span>
-            <span className="hint">必須</span>
-          </label>
+        {/* Weight */}
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <label>Weight ({safe.weightUnit})</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0" step="0.1"
+              value={safe.weight}
+              onChange={(e) => update({ weight: e.target.value })}
+              placeholder="10"
+            />
+          </div>
+          <div>
+            <label>Unit</label>
+            <select
+              value={safe.weightUnit}
+              onChange={(e) => update({ weightUnit: e.target.value })}
+            >
+              <option value="kg">kg</option>
+              <option value="lb">lb</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Breed */}
+        <div>
+          <label>Breed</label>
           <select
             value={safe.breed}
             onChange={(e) => update({ breed: e.target.value })}
           >
-            <option value="">Select breed…</option>
+            <option value="">Select breed</option>
             {breeds.map((b) => (
               <option key={b} value={b}>{b}</option>
             ))}
           </select>
         </div>
 
-        {/* アクティビティ（セグメント） */}
-        <div className="field">
-          <label className="label-row">
-            <span>Activity level</span>
-            <span className="subtle">日常の運動量</span>
-          </label>
-          <div className="seg">
+        {/* Activity */}
+        <div>
+          <label>Activity Level</label>
+          <div className="grid" style={{ gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
             {["Low","Moderate","High"].map((level) => (
               <button
                 key={level}
-                type="button"
-                className={`seg-btn ${safe.activityLevel === level ? "on" : ""}`}
+                className={`btn ${safe.activityLevel === level ? "btn-primary" : "btn-ghost"}`}
                 onClick={() => update({ activityLevel: level })}
+                type="button"
               >
                 {level}
               </button>
@@ -238,40 +198,31 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
           </div>
         </div>
 
-        {/* 健康フォーカス（チップ） */}
-        <div className="field">
-          <label className="label-row">
-            <span>Health focus</span>
-            <span className="subtle">任意</span>
-          </label>
-          <div className="chips">
+        {/* Health Focus */}
+        <div>
+          <label>Health Focus (optional)</label>
+          <div className="grid" style={{ gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
             {healthFocusOptions.map((opt) => {
-              const active = (safe.healthFocus || []).includes(opt.id);
+              const selected = (safe.healthFocus || []).includes(opt.id);
               return (
                 <button
                   key={opt.id}
+                  className={`btn ${selected ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => {
+                    const cur = Array.isArray(safe.healthFocus) ? safe.healthFocus : [];
+                    const next = selected ? cur.filter((f) => f !== opt.id) : [...cur, opt.id];
+                    update({ healthFocus: next });
+                  }}
                   type="button"
-                  className={`chip ${active ? "active" : ""}`}
-                  onClick={() => toggleFocus(opt.id)}
                 >
-                  <span className="chip-ico">{opt.icon}</span>
-                  {opt.label}
+                  <span style={{ marginRight: 6 }}>{opt.icon}</span>{opt.label}
                 </button>
               );
             })}
           </div>
         </div>
-      </div>
 
-      {/* フッター（固定CTA） */}
-      <div className="cta">
-        <div className="cta-left">
-          {!canContinue ? (
-            <span className="cta-hint">名前 / 年齢（歳またはヶ月）/ 体重 / 犬種 / 活動量 を入力してください</span>
-          ) : (
-            <span className="cta-ok">準備OKです</span>
-          )}
-        </div>
+        {/* Continue */}
         <button
           className="btn btn-primary"
           disabled={!canContinue}
@@ -280,97 +231,6 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
           Continue
         </button>
       </div>
-
-      {/* 局所スタイル（globals.cssのトークンを使用） */}
-      <style jsx>{`
-        .profile-card { padding: 18px 18px 90px; position: relative; }
-
-        .hero{
-          display:flex; align-items:center; gap:12px; margin-bottom: 8px;
-        }
-        .hero-copy{ flex:1; }
-        .hero-title{ margin:0; font-size:20px; color: var(--taupe); font-weight:800; letter-spacing:.2px; }
-        .hero-sub{ margin:.5px 0 0; font-size:14px; color:#7a6a56; }
-
-        /* Avatar */
-        .avatar{
-          position: relative;
-          width:68px; height:68px; border-radius:50%; overflow:hidden;
-          background: var(--sand); box-shadow: var(--shadow-sm);
-          display:grid; place-items:center;
-        }
-        .avatar img{ width:100%; height:100%; object-fit:cover; }
-        .avatar-emoji{ font-size:28px; }
-        .avatar-btn{
-          position:absolute; right:-4px; bottom:-4px;
-          padding:6px 10px; border-radius:999px; border:0; cursor:pointer;
-          font-weight:700; background:#ffffff; color:var(--taupe);
-          box-shadow: var(--shadow-sm);
-        }
-        .avatar-btn:hover{ box-shadow: var(--shadow-md); }
-
-        .form{ display:grid; gap:12px; }
-        .field{ display:grid; gap:6px; }
-        .label-row{
-          display:flex; align-items:baseline; justify-content:space-between;
-          font-weight:700; color: var(--taupe);
-        }
-        .hint{
-          font-size:12px; font-weight:700; color:#8e7b65; background:var(--sand);
-          padding:2px 8px; border-radius:999px;
-        }
-        .subtle{ color:#9a8b77; font-size:12px; }
-
-        .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-        @media (max-width: 520px){ .grid2{ grid-template-columns: 1fr; } }
-
-        .age-row{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
-
-        .input-with-unit{
-          display:flex; align-items:center; gap:8px;
-          background:#fff; border:1px solid #e5ddd2; border-radius: var(--radius-md);
-          padding: 6px 10px 6px 10px;
-        }
-        .input-with-unit input{
-          border:0; padding:8px 4px; flex:1; font-size:16px;
-        }
-        .input-with-unit input:focus{ outline: none; }
-        .unit{
-          min-width:28px; height:28px; display:grid; place-items:center;
-          padding: 0 6px; border-radius: 8px; background: var(--sand); color: var(--taupe);
-          font-weight:700; font-size:12px;
-        }
-
-        .seg{
-          display:grid; grid-template-columns: repeat(3,1fr); gap:6px;
-        }
-        .seg-btn{
-          border:1px solid #e5ddd2; border-radius:12px; padding:10px 12px; font-weight:700;
-          background:#fff; color: var(--taupe);
-        }
-        .seg-btn.on{
-          background: var(--moss); color:#fff; border-color: var(--moss);
-          box-shadow: var(--shadow-sm);
-        }
-
-        .chips{ display:flex; flex-wrap:wrap; gap:8px; }
-        .chip{
-          display:inline-flex; align-items:center; gap:6px;
-          border:1px solid #e5ddd2; border-radius:999px; padding:8px 12px; background:#fff; font-weight:700; color:var(--taupe);
-        }
-        .chip.active{ background: var(--sand); border-color: var(--sand); }
-        .chip-ico{ font-size:14px; }
-
-        .cta{
-          position: sticky; bottom:0; left:0; right:0;
-          display:flex; align-items:center; justify-content:space-between; gap:12px;
-          padding:12px; margin: 16px -6px -6px; border-radius: 14px;
-          background: linear-gradient(180deg, rgba(255,255,255,0), var(--cloud) 28%);
-          backdrop-filter: blur(4px);
-        }
-        .cta-hint{ font-size:12px; color:#8e7b65; }
-        .cta-ok{ font-size:12px; color:#5f7a67; font-weight:700; }
-      `}</style>
     </div>
   );
 }
