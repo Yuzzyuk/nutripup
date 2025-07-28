@@ -91,6 +91,7 @@ function normalizeDog(d = {}) {
   };
 }
 
+/* ---------- Meal sanitizer（8軸に必要な栄養を削らない版） ---------- */
 function sanitizeMeals(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -100,10 +101,21 @@ function sanitizeMeals(raw) {
       name: (m?.name ?? "").toString(),
       method: (m?.method ?? m?.cookingMethod ?? "raw").toString(),
       portion: Number(m?.portion) || 0,
+
+      // 8-Axis 用の拡張フィールドを保持
       protein: Number(m?.protein) || 0,
       fat: Number(m?.fat) || 0,
       carbs: Number(m?.carbs) || 0,
       calories: Number(m?.calories) || 0,
+
+      fiber: Number(m?.fiber) || 0, // g
+      calcium: Number(m?.calcium) || 0, // g
+      phosphorus: Number(m?.phosphorus) || 0, // g
+      omega3: Number(m?.omega3) || 0, // g
+
+      vitaminUnits: Number(m?.vitaminUnits) || 0, // 相対ユニット
+      mineralUnits: Number(m?.mineralUnits) || 0, // 相対ユニット
+
       timestamp: m?.timestamp || new Date().toISOString(),
     }));
 }
@@ -125,9 +137,6 @@ export default function Home() {
   const today = useMemo(() => todayKey(), []);
   const [meals, setMeals] = useState([]);
   const [history, setHistory] = useState([]);
-
-  // 🔑 プロフィール編集中のドラフト（親が上書きしないように分離）
-  const [profileDraft, setProfileDraft] = useState(null);
 
   /* ---- 初期ロード：dogs/selected を読む。旧データからの移行も ---- */
   useEffect(() => {
@@ -168,19 +177,6 @@ export default function Home() {
       setStep("profile");
     }
   }, []);
-
-  /* ---- step が profile に入ったタイミングでだけドラフトを初期化 ---- */
-  useEffect(() => {
-    if (step !== "profile") return;
-    const base =
-      selectedDog ||
-      (selectedDogId ? { id: selectedDogId } : { id: genId() });
-    setProfileDraft((prev) => {
-      // 既に同じIDの編集中なら維持（打鍵を上書きしない）
-      if (prev && prev.id === base.id) return prev;
-      return normalizeDog(base);
-    });
-  }, [step, selectedDogId, selectedDog]);
 
   /* ---- 選択犬が変わったら、その犬の今日の meals と history をロード ---- */
   useEffect(() => {
@@ -278,9 +274,9 @@ export default function Home() {
     setToast({ show: true, message: "Photo updated ✅" });
   };
 
-  /* ---- 保存（ドラフトを dogs に反映してから Home） ---- */
-  const saveProfile = (draft) => {
-    const safe = normalizeDog(draft || {});
+  /* ---- ProfileSetup からの保存（追加/編集共通） ---- */
+  const saveProfile = (updated) => {
+    const safe = normalizeDog(updated || {});
     setDogs((prev) => {
       const exists = prev.some((d) => d.id === safe.id);
       return exists
@@ -341,12 +337,30 @@ export default function Home() {
           />
         )}
 
-        {/* 追加/編集 プロフィール（入力はドラフト、保存時のみ親へ反映） */}
+        {/* 追加/編集 プロフィール（完了後はHomeへ戻る） */}
         {step === "profile" && (
           <ProfileSetup
-            dogProfile={profileDraft || normalizeDog(selectedDog || { id: selectedDogId })}
-            setDogProfile={setProfileDraft}               // ← 親は上書きしない。ドラフトにだけ反映
-            onContinue={() => saveProfile(profileDraft)}  // ← Save & Continue で保存
+            dogProfile={normalizeDog(selectedDog || { id: selectedDogId })}
+            setDogProfile={(patch) => {
+              // 入力中も常に正規化して保持（空新規でも即座に作成）
+              const base =
+                selectedDog || (selectedDogId ? { id: selectedDogId } : { id: genId() });
+              const next = normalizeDog({ ...base, ...patch });
+
+              setDogs((prev) => {
+                const exists = prev.some((d) => d.id === next.id);
+                return exists
+                  ? prev.map((d) => (d.id === next.id ? next : d))
+                  : [...prev, next];
+              });
+              if (!selectedDogId) setSelectedDogId(next.id);
+            }}
+            onContinue={() =>
+              saveProfile(
+                selectedDog ||
+                  dogs.find((d) => d.id === selectedDogId) || { id: selectedDogId }
+              )
+            }
           />
         )}
 
