@@ -1,6 +1,6 @@
 // components/ProfileSetup.jsx
 "use client";
-import React, { useRef } from "react";
+import React, { useMemo } from "react";
 import { fileToDataURL } from "./utils/imageToDataUrl";
 
 const breeds = [
@@ -10,163 +10,184 @@ const breeds = [
 ];
 
 const healthFocusOptions = [
-  { id: "skin",    label: "Skin & Coat", icon: "✨" },
-  { id: "joints",  label: "Joints",      icon: "🦴" },
-  { id: "kidneys", label: "Kidneys",     icon: "💧" },
-  { id: "digestion", label: "Digestion", icon: "🌿" },
-  { id: "weight",  label: "Weight",      icon: "⚖️" },
-  { id: "energy",  label: "Energy",      icon: "⚡" },
+  { id: "skin",    label: "Skin & Coat",   icon: "✨" },
+  { id: "joints",  label: "Joints",        icon: "🦴" },
+  { id: "kidneys", label: "Kidneys",       icon: "💧" },
+  { id: "digestion", label: "Digestion",   icon: "🌿" },
+  { id: "weight",  label: "Weight",        icon: "⚖️" },
+  { id: "energy",  label: "Energy",        icon: "⚡" },
 ];
 
 export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinue }) {
-  // 正規化
-  const safe = {
-    id: dogProfile.id || "",
-    name: dogProfile.name ?? "",
-    ageYears: dogProfile.ageYears ?? "",
-    ageMonths: dogProfile.ageMonths ?? "",
-    breed: dogProfile.breed ?? "",
-    weight: dogProfile.weight ?? "",
-    weightUnit: dogProfile.weightUnit || "kg",
-    activityLevel: dogProfile.activityLevel || "Moderate",
-    healthFocus: Array.isArray(dogProfile.healthFocus) ? dogProfile.healthFocus : [],
-    photo: dogProfile.photo || "",
+  // 正規化（空でも編集できるように既定値を当てる）
+  const safe = useMemo(() => {
+    const hf = Array.isArray(dogProfile.healthFocus) ? dogProfile.healthFocus : [];
+    const toNumOrEmpty = (v) => (v === "" || v == null || Number.isNaN(Number(v)) ? "" : Number(v));
+    const years = toNumOrEmpty(dogProfile.ageYears);
+    const monthsRaw = toNumOrEmpty(dogProfile.ageMonths);
+    const months = monthsRaw === "" ? "" : Math.min(11, Math.max(0, Math.round(monthsRaw)));
+
+    return {
+      id: dogProfile.id || "",
+      name: dogProfile.name ?? "",
+      ageYears: years,
+      ageMonths: months,
+      ageLabel: dogProfile.ageLabel ?? "",
+      breed: dogProfile.breed ?? "",
+      weight: dogProfile.weight ?? "",
+      weightUnit: dogProfile.weightUnit || "kg",
+      activityLevel: dogProfile.activityLevel || "Moderate",
+      healthFocus: hf,
+      photo: dogProfile.photo || "",
+    };
+  }, [dogProfile]);
+
+  const update = (patch) => {
+    if (!setDogProfile) return;
+    // ageYears/Months → ageLabel も同時更新
+    const next = { ...safe, ...patch };
+    const y = next.ageYears === "" ? "" : Math.max(0, Math.round(Number(next.ageYears)));
+    const m = next.ageMonths === "" ? "" : Math.min(11, Math.max(0, Math.round(Number(next.ageMonths))));
+    next.ageYears = y === "" ? "" : y;
+    next.ageMonths = m === "" ? "" : m;
+    next.ageLabel =
+      y === "" && m === "" ? "" : `${(y || 0)}y ${(m || 0)}m`;
+
+    setDogProfile(next);
   };
-  const update = (patch) => setDogProfile && setDogProfile({ ...safe, ...patch });
 
   const canContinue =
-    safe.name &&
-    (safe.ageYears !== "" || safe.ageMonths !== "") &&
+    safe.name.trim() &&
+    safe.breed.trim() &&
     safe.weight !== "" &&
-    safe.breed &&
+    (safe.ageYears !== "" || safe.ageMonths !== "") &&
     safe.activityLevel;
 
-  // 画像アップロード
-  const fileRef = useRef(null);
-  const onPickImage = () => fileRef.current?.click();
-  const onFile = async (e) => {
+  const onPickPhoto = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const url = await fileToDataURL(file, 384, 0.9);
-      update({ photo: url });
+      const dataUrl = await fileToDataURL(file, 512, 0.9);
+      update({ photo: dataUrl });
     } catch {
-      alert("画像の読み込みに失敗しました。別のファイルを試してください。");
+      alert("写真の読み込みに失敗しました。別の画像を試してください。");
     } finally {
       e.target.value = "";
     }
   };
 
-  const months = Array.from({ length: 12 }, (_, i) => i); // 0..11
-
   return (
-    <div className="compact">
-      <div className="card fade-in">
-        {/* ヘッダー：最小で上品に */}
-        <div className="header-block">
-          <div>
-            <h2 className="title">Create Dog Profile</h2>
-            <div className="subtitle">Quick setup · 30 seconds</div>
+    <div className="card">
+      {/* ヘッダー行（横1行に収めてスクロール不要） */}
+      <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 12, alignItems: "center" }}>
+        <label
+          htmlFor="dog-photo"
+          style={{
+            width: 72, height: 72, borderRadius: "50%", overflow: "hidden",
+            background: "var(--sand)", display: "flex", alignItems: "center", justifyContent: "center",
+            border: "1px solid rgba(0,0,0,.06)", cursor: "pointer"
+          }}
+          title="Upload photo"
+        >
+          {safe.photo ? (
+            <img src={safe.photo} alt="Dog" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <span style={{ fontSize: 28 }}>🐶</span>
+          )}
+        </label>
+        <input id="dog-photo" type="file" accept="image/*" onChange={onPickPhoto} style={{ display: "none" }} />
+
+        <div>
+          <div style={{ fontWeight: 800, color: "var(--taupe)", marginBottom: 4 }}>Dog Profile</div>
+          <div style={{ fontSize: 13, color: "var(--taupe)" }}>
+            Enter name, age, weight and goals.
           </div>
-          {/* 右上に保存ボタンは置かず、下部CTAを使用 */}
         </div>
+      </div>
 
-        {/* アバター + すぐ操作 */}
-        <div className="avatar-block" style={{ marginTop: 2, marginBottom: 8 }}>
-          <div className="avatar" aria-label="Dog avatar">
-            {safe.photo ? <img src={safe.photo} alt="Dog" /> : <span style={{ fontSize: 26 }}>🐶</span>}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button className="btn btn-ghost" onClick={onPickImage}>Upload Photo</button>
-            {safe.photo && (
-              <button className="btn btn-ghost" onClick={() => update({ photo: "" })}>Remove</button>
-            )}
-            <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
-          </div>
-        </div>
-
-        {/* ===== フォーム（詰め配置） ===== */}
-        <div className="form">
-          {/* 1行目：名前 / 犬種（datalistで軽量に） */}
-          <div className="row-2">
-            <div>
-              <label>Name</label>
-              <input
-                autoFocus
-                aria-label="Dog name"
-                value={safe.name}
-                onChange={(e) => update({ name: e.target.value })}
-                placeholder="Momo"
-              />
-            </div>
-            <div>
-              <label>Breed</label>
-              <input
-                list="breed-list"
-                placeholder="Shiba"
-                value={safe.breed}
-                onChange={(e) => update({ breed: e.target.value })}
-              />
-              <datalist id="breed-list">
-                {breeds.map((b) => <option key={b} value={b} />)}
-              </datalist>
-            </div>
-          </div>
-
-          {/* 2行目：年齢(年+月) / 体重+単位（4カラムで高さ削減） */}
-          <div className="row-4">
-            <div>
-              <label>Age (Years)</label>
-              <input
-                type="number" inputMode="numeric" min="0" max="25"
-                placeholder="3"
-                value={safe.ageYears}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "" || (+v >= 0 && +v <= 25)) update({ ageYears: v });
-                }}
-              />
-            </div>
-            <div>
-              <label>Age (Months)</label>
-              <select
-                value={safe.ageMonths === "" ? "" : String(safe.ageMonths)}
-                onChange={(e) => update({ ageMonths: e.target.value === "" ? "" : Number(e.target.value) })}
-              >
-                <option value="">—</option>
-                {months.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-            <div>
-              <label>Weight</label>
-              <input
-                type="number" inputMode="decimal" min="0" step="0.1"
-                value={safe.weight}
-                onChange={(e) => update({ weight: e.target.value })}
-                placeholder="10"
-              />
-            </div>
-            <div>
-              <label>Unit</label>
-              <select value={safe.weightUnit} onChange={(e) => update({ weightUnit: e.target.value })}>
-                <option value="kg">kg</option>
-                <option value="lb">lb</option>
-              </select>
-            </div>
-          </div>
-
-          {/* 3行目：アクティビティ（セグメント） */}
+      {/* 入力行（2列グリッドで画面内に収める） */}
+      <div className="container" style={{ padding: 0, marginTop: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {/* Name */}
           <div>
-            <label>Activity Level</label>
-            <div className="segmented" role="tablist" aria-label="Activity Level">
-              {["Low","Moderate","High"].map((level) => (
+            <label className="label" style={{ marginTop: 0 }}>Name</label>
+            <input
+              type="text"
+              value={safe.name}
+              onChange={(e) => update({ name: e.target.value })}
+              placeholder="e.g., Momo"
+              inputMode="text"
+              autoComplete="name"
+            />
+          </div>
+
+          {/* Breed */}
+          <div>
+            <label className="label" style={{ marginTop: 0 }}>Breed</label>
+            <select value={safe.breed} onChange={(e) => update({ breed: e.target.value })}>
+              <option value="">Select breed</option>
+              {breeds.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Age (years / months) */}
+          <div>
+            <label className="label">Age — Years</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="40"
+              value={safe.ageYears === "" ? "" : safe.ageYears}
+              onChange={(e) => {
+                const v = e.target.value === "" ? "" : Math.max(0, Math.min(40, Number(e.target.value)));
+                update({ ageYears: v });
+              }}
+              placeholder="e.g., 2"
+            />
+          </div>
+          <div>
+            <label className="label">Age — Months</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="11"
+              value={safe.ageMonths === "" ? "" : safe.ageMonths}
+              onChange={(e) => {
+                const v = e.target.value === "" ? "" : Math.max(0, Math.min(11, Number(e.target.value)));
+                update({ ageMonths: v });
+              }}
+              placeholder="0–11"
+            />
+          </div>
+
+          {/* Weight */}
+          <div>
+            <label className="label">Weight ({safe.weightUnit})</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.1"
+              value={safe.weight}
+              onChange={(e) => update({ weight: e.target.value })}
+              placeholder="e.g., 8.5"
+            />
+          </div>
+
+          {/* Activity */}
+          <div>
+            <label className="label">Activity</label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              {["Low", "Moderate", "High"].map((level) => (
                 <button
                   key={level}
-                  className={`item ${safe.activityLevel === level ? "active" : ""}`}
-                  onClick={() => update({ activityLevel: level })}
                   type="button"
-                  role="tab"
-                  aria-selected={safe.activityLevel === level}
+                  className={`btn ${safe.activityLevel === level ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => update({ activityLevel: level })}
                 >
                   {level}
                 </button>
@@ -174,24 +195,23 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
             </div>
           </div>
 
-          {/* 4行目：ヘルスフォーカス（横スクロールで省スペース） */}
-          <div>
-            <label>Health Focus (optional)</label>
-            <div className="chips scroll-x" role="listbox" aria-label="Health Focus">
+          {/* Health focus */}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label className="label">Health Focus (optional)</label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0,1fr))", gap: 8 }}>
               {healthFocusOptions.map((opt) => {
-                const on = (safe.healthFocus || []).includes(opt.id);
+                const selected = (safe.healthFocus || []).includes(opt.id);
                 return (
                   <button
                     key={opt.id}
-                    className={`chip ${on ? "on" : ""}`}
+                    type="button"
+                    className={`btn ${selected ? "btn-primary" : "btn-ghost"}`}
                     onClick={() => {
                       const cur = Array.isArray(safe.healthFocus) ? safe.healthFocus : [];
-                      const next = on ? cur.filter((f) => f !== opt.id) : [...cur, opt.id];
+                      const next = selected ? cur.filter((f) => f !== opt.id) : [...cur, opt.id];
                       update({ healthFocus: next });
                     }}
-                    type="button"
-                    role="option"
-                    aria-selected={on}
+                    title={opt.label}
                   >
                     <span style={{ marginRight: 6 }}>{opt.icon}</span>{opt.label}
                   </button>
@@ -199,23 +219,19 @@ export default function ProfileSetup({ dogProfile = {}, setDogProfile, onContinu
               })}
             </div>
           </div>
-
-          {/* ヒント（1行） */}
-          <div className="hint">Age: 0–25歳 / Months: 0–11、写真は任意です。</div>
-
-          {/* CTA（最下部固定ぎみ） */}
-          <div className="sticky-cta">
-            <button className="btn btn-ghost" type="button" onClick={() => update({})}>Later</button>
-            <button
-              className="btn btn-primary"
-              disabled={!canContinue}
-              onClick={() => onContinue && onContinue()}
-              style={{ flex: 1 }}
-            >
-              Save & Continue
-            </button>
-          </div>
         </div>
+      </div>
+
+      {/* アクション */}
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button
+          className="btn btn-primary"
+          disabled={!canContinue}
+          onClick={() => onContinue && onContinue()}
+          style={{ flex: 1 }}
+        >
+          Save & Continue
+        </button>
       </div>
     </div>
   );
