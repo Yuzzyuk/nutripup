@@ -3,9 +3,28 @@
 import React, { useMemo, useState } from "react";
 
 export default function AiSuggestions({ meals = [], dogProfile = {} }) {
-  const [ai, setAi] = useState({ loading: false, error: "", data: null });
+  const [model, setModel] = useState("gpt-4o-mini");
+  const [promptText, setPromptText] = useState(
+`You are a professional veterinary nutritionist for dogs.
+- Personalize strictly to the dog's profile and the owner's goals.
+- Use WSAVA & AAFCO style principles for balance (no brand endorsements).
+- Be specific with grams (e.g., "卵殻カルシウム 1.2g 追加") and kcal adjustments.
+- If something is excessive, say exactly how many grams to reduce.
+- Tone: premium, warm, concise. Up to 3 bullet points. Output in user's language.
 
-  // ローカルの簡易フォールバック（AI失敗時に表示）
+Return JSON only:
+{
+  "summary": "1 short sentence",
+  "suggestions": [
+    {"title": "…", "detail": "…", "amount": 1.2, "unit": "g"},
+    {"title": "…", "detail": "…"}
+  ],
+  "disclaimer": "短い注意書き（任意）"
+}`
+  );
+
+  const [state, setState] = useState({ loading: false, error: "", data: null });
+
   const totals = useMemo(() => {
     return (Array.isArray(meals) ? meals : []).reduce(
       (a, m) => ({
@@ -18,67 +37,106 @@ export default function AiSuggestions({ meals = [], dogProfile = {} }) {
     );
   }, [meals]);
 
-  const fallback = useMemo(() => {
-    const s = [];
-    if ((totals.protein || 0) < 50) s.push("タンパク質がやや不足 — 鶏胸肉などを+50–80g。");
-    if ((totals.fat || 0) < 15) s.push("必須脂肪酸が不足気味 — サーモン/フィッシュオイルを少量追加。");
-    if ((totals.calories || 0) < 800) s.push("エネルギー不足 — 炭水化物を+80–120kcal（さつまいも/白米）。");
-    return s.length ? s : ["良いバランスです ✅"];
-  }, [totals]);
-
   const callAI = async () => {
-    setAi({ loading: true, error: "", data: null });
+    setState({ loading: true, error: "", data: null });
     try {
-      const res = await fetch("/api/suggest", {
+      const res = await fetch("/api/ai-suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dogProfile, meals }),
+        body: JSON.stringify({ meals, dogProfile, model, promptText }),
       });
-      if (!res.ok) throw new Error("Request failed");
-      const json = await res.json();
-      setAi({ loading: false, error: "", data: json });
-    } catch {
-      setAi({ loading: false, error: "AI request failed", data: null });
+
+      const text = await res.text();
+      if (!res.ok) {
+        let detail;
+        try { detail = JSON.parse(text); } catch { detail = { raw: text }; }
+        const readable = detail?.detail?.error?.message || detail?.error || "AI request failed";
+        return setState({ loading: false, error: readable, data: null });
+      }
+
+      const data = JSON.parse(text);
+      setState({ loading: false, error: "", data });
+    } catch (e) {
+      setState({ loading: false, error: "AIの提案を取得できませんでした。時間をおいて再度お試しください。", data: null });
     }
   };
 
   return (
-    <div className="card" style={{ padding: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <div style={{ fontWeight: 800, color: "var(--taupe)" }}>AI Coach</div>
-        <button className="btn btn-primary" onClick={callAI} disabled={ai.loading}>
-          {ai.loading ? "Analyzing..." : "Generate"}
-        </button>
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div className="badge">AI Nutritionist</div>
+        <div style={{ color: "var(--taupe)" }}>
+          細かいグラム・kcalまでパーソナライズ
+        </div>
       </div>
 
-      {ai.error && (
-        <div className="card" style={{ background: "#fff5f5", color: "#a33", marginBottom: 8 }}>
-          {ai.error} — ローカルの提案を表示します。
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <label style={{ fontSize: 13, color: "var(--taupe)" }}>
+            Model
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+            </select>
+          </label>
+          <button className="btn btn-primary" onClick={callAI} disabled={state.loading}>
+            {state.loading ? "Analyzing…" : "Ask AI for personalized tips"}
+          </button>
+        </div>
+
+        {/* 任意：プロンプト微調整欄（隠したければ削除OK） */}
+        <label style={{ fontSize: 13, color: "var(--taupe)" }}>
+          (Optional) Instruction Override
+          <textarea rows={4} value={promptText} onChange={(e) => setPromptText(e.target.value)} />
+        </label>
+      </div>
+
+      {state.error && (
+        <div className="card" style={{ background: "#fff7f7", color: "#a33", marginTop: 8 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>AIエラー</div>
+          <div style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>
+            {state.error}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--taupe)" }}>
+            例：429（クォータ不足）なら課金/クレジットを確認、401ならAPIキー未設定です。
+          </div>
         </div>
       )}
 
-      {ai.data ? (
-        <div className="space-y-2">
-          <div style={{ color: "var(--taupe)", marginBottom: 8 }}>
-            {ai.data.summary || "AI suggestions"}
-          </div>
-          {(ai.data.suggestions || []).map((it, i) => (
-            <div key={i} className="card" style={{ background: "var(--cloud)" }}>
-              <div style={{ fontWeight: 700, color: "var(--taupe)" }}>{it.title || "Tip"}</div>
-              <div style={{ color: "#6d5a49" }}>{it.detail || ""}</div>
-              {it.amount != null && it.unit && (
-                <div style={{ fontSize: 12, color: "#6d5a49", marginTop: 4 }}>
-                  {`${it.amount} ${it.unit}`}
+      {state.data && (
+        <div style={{ marginTop: 12 }}>
+          {state.data.summary && (
+            <div className="card" style={{ background: "var(--cloud)" }}>
+              <b>Summary</b>
+              <div>{state.data.summary}</div>
+            </div>
+          )}
+
+          {(state.data.suggestions || []).map((s, i) => (
+            <div key={i} className="card" style={{ marginTop: 8 }}>
+              <div style={{ fontWeight: 700 }}>{s.title || "Tip"}</div>
+              <div style={{ color: "var(--taupe)" }}>{s.detail || ""}</div>
+              {(s.amount != null && s.unit) && (
+                <div style={{ fontSize: 13, color: "var(--taupe)" }}>
+                  {s.amount} {s.unit}
                 </div>
               )}
             </div>
           ))}
+
+          {state.data.disclaimer && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "var(--taupe)" }}>
+              {state.data.disclaimer}
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="space-y-2">
-          {fallback.map((msg, i) => (
-            <div key={i} className="card" style={{ background: "var(--cloud)" }}>{msg}</div>
-          ))}
+      )}
+
+      {/* フォールバック（API失敗時） */}
+      {!state.data && !state.loading && !state.error && (
+        <div style={{ marginTop: 8, color: "var(--taupe)", fontSize: 14 }}>
+          たとえば：P {Math.round(totals.protein)}g / F {Math.round(totals.fat)}g / {Math.round(totals.calories)} kcal に合わせ、
+          低脂肪タンパクや緩やかな炭水化物を微調整するとよいかも。
         </div>
       )}
     </div>
