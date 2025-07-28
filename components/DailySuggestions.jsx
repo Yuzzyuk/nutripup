@@ -1,172 +1,74 @@
 // components/DailySuggestions.jsx
 "use client";
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
+import AiSuggestions from "./AiSuggestions";
 
-function sumMeals(meals = []) {
-  const arr = Array.isArray(meals) ? meals : [];
-  return arr.reduce(
-    (a, m) => ({
-      protein: a.protein + (Number(m?.protein) || 0),
-      fat: a.fat + (Number(m?.fat) || 0),
-      carbs: a.carbs + (Number(m?.carbs) || 0),
-      calories: a.calories + (Number(m?.calories) || 0),
-    }),
-    { protein: 0, fat: 0, carbs: 0, calories: 0 }
-  );
-}
-
-const stripFences = (s = "") =>
-  s.replace(/```json/gi, "").replace(/```/g, "").trim();
+// “念のため”のセーフ関数
+const A = (v) => (Array.isArray(v) ? v : []);
 
 export default function DailySuggestions({ meals = [], dogProfile = {}, onBack }) {
-  const [ai, setAi] = useState({ loading: false, error: "", errorCode: "", data: null });
+  const healthFocus = A(dogProfile?.healthFocus);
 
-  const totals = useMemo(() => sumMeals(meals), [meals]);
-  const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
-  const name = dogProfile?.name || "Your dog";
+  // ざっくり栄養合計
+  const totals = useMemo(() => {
+    return (Array.isArray(meals) ? meals : []).reduce(
+      (a, m) => ({
+        protein: a.protein + (Number(m?.protein) || 0),
+        fat: a.fat + (Number(m?.fat) || 0),
+        carbs: a.carbs + (Number(m?.carbs) || 0),
+        calories: a.calories + (Number(m?.calories) || 0),
+        fiber: a.fiber + (Number(m?.fiber) || 0),
+        calcium: a.calcium + (Number(m?.calcium) || 0),
+        phosphorus: a.phosphorus + (Number(m?.phosphorus) || 0),
+      }),
+      { protein: 0, fat: 0, carbs: 0, calories: 0, fiber: 0, calcium: 0, phosphorus: 0 }
+    );
+  }, [meals]);
 
-  const fallback = useMemo(() => {
+  const targets = { protein: 50, fat: 15, calories: 800, fiber: 15, calcium: 1.0, phosphorus: 0.8 };
+
+  const suggestions = useMemo(() => {
     const s = [];
-    if ((totals.protein || 0) < 50) s.push("Protein is a bit low — add 50–100 g lean meat (e.g., chicken breast).");
-    if ((totals.fat || 0) < 15) s.push("Essential fats slightly low — include salmon/sardine or 1–2 tsp fish oil.");
-    if ((totals.calories || 0) < 800) s.push("Energy may be low — add ~100–200 kcal (sweet potato/rice/cottage cheese).");
-    if (healthFocus.includes("skin")) s.push("Skin & coat: favor omega-3 (sardine/salmon) + vitamin E sources.");
-    if (healthFocus.includes("joints")) s.push("Joints: consider gelatin/collagen or green-lipped mussel.");
-    return s.length ? s : ["Looks balanced today — nice work! ✅"];
+    const deficit = (k) => Math.max(0, (targets[k] || 0) - (totals[k] || 0));
+    const excess  = (k) => Math.max(0, (totals[k] || 0) - (targets[k] || 0));
+
+    if (deficit("protein") > 0) s.push(`Protein is a bit low — add about ${Math.round(deficit("protein"))} g lean meat.`);
+    if (deficit("fat") > 0)     s.push(`Essential fats slightly low — add ~${Math.round(deficit("fat"))} g salmon/fish oil.`);
+    else if (excess("fat") > 0) s.push(`Fat is a bit high — trim/ reduce oil by ~${Math.round(excess("fat"))} g.`);
+    if (deficit("calories") > 0) s.push(`Energy low — add ~${Math.round(deficit("calories"))} kcal (sweet potato/rice).`);
+    if (deficit("fiber") > 0)    s.push(`Fiber low — add ~${Math.round(deficit("fiber"))} g veggies (pumpkin/carrots).`);
+    if (deficit("calcium") > 0)  s.push(`Calcium low — add ~${Math.round(deficit("calcium") * 10) / 10} g eggshell powder.`);
+    if (deficit("phosphorus") > 0) s.push(`Phosphorus low — small amounts of meat/organs (≈${Math.round(deficit("phosphorus")*10)/10} g P).`);
+
+    if (healthFocus.includes("skin"))      s.push("Skin & coat — omega-3 fish + vitamin E.");
+    if (healthFocus.includes("joints"))    s.push("Joints — green-lipped mussel or gelatin.");
+    if (healthFocus.includes("kidneys"))   s.push("Kidneys — moderate phosphorus & hydration.");
+    if (healthFocus.includes("digestion")) s.push("Digestion — gentle fiber & probiotics.");
+    if (healthFocus.includes("weight"))    s.push("Weight — lean proteins + bulky veg for satiety.");
+    if (healthFocus.includes("energy"))    s.push("Energy — ensure calories + essential fats.");
+
+    return s.length ? s : ["Looks great today — nicely balanced! ✅"];
   }, [totals, healthFocus]);
-
-  const callAI = async () => {
-    setAi({ loading: true, error: "", errorCode: "", data: null });
-    try {
-      const r = await fetch("/api/suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dogProfile, meals }),
-      });
-
-      // 失敗時でもサーバーの詳細を拾う
-      if (!r.ok) {
-        let payload = {};
-        try { payload = await r.json(); } catch { /* ignore */ }
-        const msg = payload?.message || "AIの提案を取得できませんでした。時間をおいて再度お試しください。";
-        const code = payload?.code || "";
-        setAi({ loading: false, error: msg, errorCode: code, data: null });
-        return;
-      }
-
-      const json = await r.json();
-
-      if (typeof json.summary === "string") json.summary = stripFences(json.summary);
-      if (Array.isArray(json.suggestions)) {
-        json.suggestions = json.suggestions.map((it) => ({
-          title: stripFences(it?.title || "Tip"),
-          detail: stripFences(it?.detail || ""),
-          amount: typeof it?.amount === "number" ? it.amount : null,
-          unit: it?.unit ?? null,
-        }));
-      }
-
-      setAi({ loading: false, error: "", errorCode: "", data: json });
-    } catch (e) {
-      setAi({
-        loading: false,
-        error: "ネットワークまたはサーバーで問題が発生しました。",
-        errorCode: "",
-        data: null,
-      });
-    }
-  };
-
-  const data = ai.data;
-
-  // エラーの種類別にヒントを出す
-  const helper =
-    ai.errorCode === "insufficient_quota"
-      ? "OpenAIのクレジット／プランの上限に達しています。請求設定または別モデル／キーをご確認ください。"
-      : ai.errorCode === "missing_api_key"
-      ? "サーバーに OPENAI_API_KEY が設定されていません（VercelのEnvironment Variablesで設定→再デプロイ）。"
-      : "";
 
   return (
     <div className="card">
-      <h2 style={{ marginTop: 0 }}>AI Nutritionist</h2>
-      <div style={{ color: "var(--taupe)", marginTop: -6, marginBottom: 12 }}>
-        Ask AI for personalized tips — grounded in veterinary nutrition.
+      <h2 style={{ marginTop: 0 }}>Daily Suggestions</h2>
+
+      {/* ローカル（即時）サジェスト */}
+      <div className="grid" style={{ gap: 8, marginBottom: 8 }}>
+        {suggestions.map((msg, i) => (
+          <div key={i} className="card" style={{ padding: 12 }}>
+            {msg}
+          </div>
+        ))}
       </div>
 
-      <div className="kpi" style={{ marginBottom: 12 }}>
-        <div style={{ fontWeight: 800 }}>{name}</div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 10, fontSize: 14, color: "var(--taupe)" }}>
-          <span>Protein {Math.round(totals.protein)}g</span>
-          <span>Fat {Math.round(totals.fat)}g</span>
-          <span>Kcal {Math.round(totals.calories)}</span>
-        </div>
-      </div>
+      {/* AI 栄養士（API 呼び出し） */}
+      <AiSuggestions meals={meals} dogProfile={dogProfile} />
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary" onClick={callAI} disabled={ai.loading}>
-          {ai.loading ? "Analyzing..." : "Ask AI for personalized tips"}
-        </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         {onBack && <button className="btn btn-ghost" onClick={onBack}>Back</button>}
       </div>
-
-      {ai.error && (
-        <div className="card" style={{ background: "#fff6f6", color: "#a33", marginTop: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>
-            {ai.error}
-          </div>
-          {helper && <div style={{ fontSize: 13 }}>{helper}</div>}
-        </div>
-      )}
-
-      {data ? (
-        <div className="card" style={{ marginTop: 12, background: "var(--cloud)" }}>
-          <div style={{ fontWeight: 800, marginBottom: 8 }}>
-            {data.summary || "Personalized suggestions"}
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            {(data.suggestions || []).map((it, i) => (
-              <div key={i} className="card" style={{ padding: 12 }}>
-                <div style={{ fontWeight: 700, color: "var(--taupe)" }}>
-                  {it.title || "Tip"}
-                  {typeof it.amount === "number" && it.unit ? (
-                    <span style={{ marginLeft: 6, fontWeight: 800 }}>
-                      · {it.amount} {it.unit}
-                    </span>
-                  ) : null}
-                </div>
-                <div style={{ marginTop: 4 }}>{it.detail || ""}</div>
-              </div>
-            ))}
-          </div>
-
-          {(Array.isArray(data.references) && data.references.length > 0) && (
-            <div className="card" style={{ marginTop: 12 }}>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>Evidence & Guidance</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {data.references.map((r, idx) => (
-                  <li key={idx}>
-                    <a href={r.url} target="_blank" rel="noreferrer">{r.title || r.url}</a>
-                  </li>
-                ))}
-              </ul>
-              <div style={{ fontSize: 12, color: "var(--taupe)", marginTop: 6 }}>
-                Educational use only. For medical conditions, consult your veterinarian.
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="card" style={{ marginTop: 12, background: "var(--cloud)" }}>
-          <div style={{ fontWeight: 800, marginBottom: 8 }}>Local quick tips</div>
-          <div style={{ display: "grid", gap: 8 }}>
-            {fallback.map((msg, i) => (
-              <div key={i} className="card" style={{ padding: 12 }}>{msg}</div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
