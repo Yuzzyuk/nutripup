@@ -3,43 +3,69 @@
 import React, { useMemo, useState } from "react";
 import { INGREDIENTS } from "./data/ingredients";
 
+// どちらのスキーマでも読めるようにアダプタ
+function readPer100(item = {}) {
+  // 旧：{ per100: { protein, fat, carbs, calories, fiber, calcium, phosphorus, vitScore100 } }
+  if (item.per100 && typeof item.per100 === "object") {
+    const p = item.per100 || {};
+    return {
+      protein: p.protein ?? 0,
+      fat: p.fat ?? 0,
+      carbs: p.carbs ?? 0,
+      calories: p.calories ?? 0,
+      fiber: p.fiber ?? 0,
+      calcium: p.calcium ?? 0,      // g
+      phosphorus: p.phosphorus ?? 0,// g
+      vitScore100: p.vitScore100 ?? 0, // 任意スコア/100g
+    };
+  }
+  // あなたの現行：フラット（vitamin_score: 0〜1 の相対指標）
+  return {
+    protein: item.protein ?? 0,
+    fat: item.fat ?? 0,
+    carbs: item.carbs ?? 0,
+    calories: item.calories ?? 0,
+    fiber: item.fiber ?? 0,
+    calcium: item.calcium ?? 0,        // g
+    phosphorus: item.phosphorus ?? 0,  // g
+    // vitamin_score(0..1) → 0..100 にスケールして暫定ビタミンスコア化
+    vitScore100:
+      item.vitScore100 ?? ((item.vitamin_score ?? 0) * 100),
+  };
+}
+
 export default function MealInput({ meals, setMeals, dogName = "", onNext, onBack }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [portion, setPortion] = useState(100); // g
   const [method, setMethod] = useState("Raw"); // Raw / Boiled / Steamed / Baked
 
-  // 検索
+  const options = Array.isArray(INGREDIENTS) ? INGREDIENTS : [];
+
   const filtered = useMemo(() => {
-    if (!search) return INGREDIENTS.slice(0, 12);
-    const q = search.toLowerCase();
-    return INGREDIENTS.filter(i => i.name.toLowerCase().includes(q)).slice(0, 30);
-  }, [search]);
+    if (!search) return options.slice(0, 12);
+    return options.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
+  }, [search, options]);
 
   const addMeal = () => {
     if (!selected || !portion) return;
+    const per100 = readPer100(selected);
     const scale = Number(portion) / 100;
 
-    // 8軸に必要なフィールドを全て持たせる
     const entry = {
       id: Date.now(),
       name: selected.name,
       portion: Number(portion),
       method,
-
-      protein: +(selected.protein * scale).toFixed(2),
-      fat: +(selected.fat * scale).toFixed(2),
-      carbs: +(selected.carbs * scale).toFixed(2),
-      calories: Math.round(selected.calories * scale),
-
-      fiber: +(selected.fiber * scale).toFixed(2),
-      calcium: +(selected.calcium * scale).toFixed(3),       // g
-      phosphorus: +(selected.phosphorus * scale).toFixed(3), // g
-      omega3: +(selected.omega3 * scale).toFixed(2),         // g
-
-      // マイクロ栄養はユニット化（相対指標）
-      vitaminUnits: +(selected.vitamin_score * scale).toFixed(3),
-      mineralUnits: +(selected.mineral_score * scale).toFixed(3),
+      // 8-Axis に必要な栄養を全部保存
+      protein:     +( (per100.protein     || 0) * scale ).toFixed(2),
+      fat:         +( (per100.fat         || 0) * scale ).toFixed(2),
+      carbs:       +( (per100.carbs       || 0) * scale ).toFixed(2),
+      calories:    Math.round( (per100.calories || 0) * scale ),
+      fiber:       +( (per100.fiber       || 0) * scale ).toFixed(2),
+      calcium:     +( (per100.calcium     || 0) * scale ).toFixed(3),   // g
+      phosphorus:  +( (per100.phosphorus  || 0) * scale ).toFixed(3),   // g
+      vitScore:    +( (per100.vitScore100 || 0) * scale ).toFixed(1),   // 0..100ベースを分量に按分
     };
 
     setMeals([...(meals || []), entry]);
@@ -50,6 +76,7 @@ export default function MealInput({ meals, setMeals, dogName = "", onNext, onBac
   };
 
   const removeMeal = (id) => setMeals((meals || []).filter(m => m.id !== id));
+
   const today = new Date().toLocaleDateString();
 
   return (
@@ -69,32 +96,38 @@ export default function MealInput({ meals, setMeals, dogName = "", onNext, onBac
           style={{ width: "100%", padding: 12, borderRadius: 12, border: "1px solid #e5ddd2" }}
         />
 
-        {/* 候補 */}
+        {/* 候補リスト */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {filtered.map((i) => (
-            <button
-              key={i.name}
-              className="btn btn-ghost"
-              onClick={() => setSelected(i)}
-              style={{ justifyContent: "flex-start" }}
-            >
-              <div style={{ fontWeight: 700, marginRight: 6 }}>{i.name}</div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>
-                {i.protein}g P • {i.fat}g F • {i.calories} kcal /100g
-              </div>
-            </button>
-          ))}
+          {filtered.map((i) => {
+            const per100 = readPer100(i);
+            return (
+              <button
+                key={i.name}
+                className="btn btn-ghost"
+                onClick={() => setSelected(i)}
+                style={{ justifyContent: "flex-start" }}
+                type="button"
+              >
+                <span style={{ fontWeight: 700, marginRight: 6 }}>{i.name}</span>
+                <span style={{ fontSize: 12, opacity: 0.8 }}>
+                  {per100.protein}g P • {per100.calories} kcal /100g
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* 詳細 */}
+      {/* 選択詳細 */}
       {selected && (
         <div className="card" style={{ marginTop: 12, background: "var(--cloud)" }}>
           <div style={{ fontWeight: 700, color: "var(--taupe)" }}>{selected.name}</div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
             <div>
-              <label style={{ display: "block", fontWeight: 700, color: "var(--taupe)" }}>Portion (g)</label>
+              <label style={{ display: "block", fontWeight: 700, color: "var(--taupe)" }}>
+                Portion (g)
+              </label>
               <input
                 type="number"
                 min="1"
@@ -104,10 +137,17 @@ export default function MealInput({ meals, setMeals, dogName = "", onNext, onBac
               />
             </div>
             <div>
-              <label style={{ display: "block", fontWeight: 700, color: "var(--taupe)" }}>Method</label>
+              <label style={{ display: "block", fontWeight: 700, color: "var(--taupe)" }}>
+                Method
+              </label>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-                {["Raw","Boiled","Steamed","Baked"].map(m => (
-                  <button key={m} className={`btn ${method === m ? "btn-primary" : "btn-ghost"}`} onClick={() => setMethod(m)}>
+                {["Raw", "Boiled", "Steamed", "Baked"].map(m => (
+                  <button
+                    key={m}
+                    className={`btn ${method === m ? "btn-primary" : "btn-ghost"}`}
+                    onClick={() => setMethod(m)}
+                    type="button"
+                  >
                     {m}
                   </button>
                 ))}
@@ -115,18 +155,21 @@ export default function MealInput({ meals, setMeals, dogName = "", onNext, onBac
             </div>
           </div>
 
-          {/* クイック量 */}
           <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
             {[50, 100, 200].map(g => (
-              <button key={g} className="btn btn-ghost" onClick={() => setPortion(g)}>{g} g</button>
+              <button key={g} className="btn btn-ghost" onClick={() => setPortion(g)} type="button">
+                {g} g
+              </button>
             ))}
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-            <button className="btn btn-primary" onClick={addMeal} style={{ flex: 1 }}>
+            <button className="btn btn-primary" onClick={addMeal} style={{ flex: 1 }} type="button">
               Add to list
             </button>
-            <button className="btn btn-ghost" onClick={() => setSelected(null)}>Cancel</button>
+            <button className="btn btn-ghost" onClick={() => setSelected(null)} type="button">
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -145,10 +188,12 @@ export default function MealInput({ meals, setMeals, dogName = "", onNext, onBac
                       {m.portion}g • {m.method} • {m.calories} kcal
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>
-                      P {m.protein}g / F {m.fat}g / C {m.carbs}g • Fiber {m.fiber}g • Ca {m.calcium}g • P {m.phosphorus}g • ω3 {m.omega3}g
+                      {m.protein}g P / {m.fat}g F / {m.carbs}g C • {m.fiber ?? 0}g fiber
                     </div>
                   </div>
-                  <button className="btn btn-ghost" onClick={() => removeMeal(m.id)}>Delete</button>
+                  <button className="btn btn-ghost" onClick={() => removeMeal(m.id)} type="button">
+                    Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -156,8 +201,10 @@ export default function MealInput({ meals, setMeals, dogName = "", onNext, onBac
 
           {onNext && (
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-              {onBack && <button className="btn btn-ghost" onClick={onBack}>Back</button>}
-              <button className="btn btn-primary" onClick={onNext} style={{ flex: 1 }}>Go to Summary</button>
+              {onBack && <button className="btn btn-ghost" onClick={onBack} type="button">Back</button>}
+              <button className="btn btn-primary" onClick={onNext} style={{ flex: 1 }} type="button">
+                Go to Summary
+              </button>
             </div>
           )}
         </div>
