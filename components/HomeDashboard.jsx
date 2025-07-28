@@ -12,6 +12,7 @@ export default function HomeDashboard({
   onGoSuggestions,
   onGoHistory,
 }) {
+  // dogProfile を安全に扱う
   const name = (dogProfile?.name ?? "").toString();
   const breed = (dogProfile?.breed ?? "").toString();
   const weight = dogProfile?.weight ?? "";
@@ -20,13 +21,9 @@ export default function HomeDashboard({
   const photo = dogProfile?.photo || "";
   const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
 
-  const hasMeals = Array.isArray(meals) && meals.length > 0;
-
-  // ✅ 今日の平均スコア：未入力なら 0 にする（固定値は使わない）
+  // 今日のざっくりスコア（簡易）
   const todayScore = useMemo(() => {
-    if (!hasMeals) return 0;
-
-    const tot = meals.reduce(
+    const tot = (Array.isArray(meals) ? meals : []).reduce(
       (a, m) => ({
         protein: a.protein + (Number(m?.protein) || 0),
         fat: a.fat + (Number(m?.fat) || 0),
@@ -35,21 +32,19 @@ export default function HomeDashboard({
       }),
       { protein: 0, fat: 0, carbs: 0, calories: 0 }
     );
-
     const scoreObj = {
       protein: Math.min(100, (tot.protein / 50) * 100),
       fats: Math.min(100, (tot.fat / 15) * 100),
-      // 固定の60/55は廃止
-      minerals: 0,
-      vitamins: 0,
+      minerals: 60,
+      vitamins: 60,
       energy: Math.min(100, (tot.calories / 800) * 100),
-      fiber: 0,
-      calcium: 0,
-      phosphorus: 0,
+      fiber: 55,
+      calcium: 55,
+      phosphorus: 55,
     };
     const avg = Object.values(scoreObj).reduce((a, b) => a + b, 0) / 8;
     return Math.round(avg);
-  }, [meals, hasMeals]);
+  }, [meals]);
 
   return (
     <div className="grid" style={{ gap: 12 }}>
@@ -82,8 +77,14 @@ export default function HomeDashboard({
         </div>
       </div>
 
-      {/* レーダー（栄養サマリー） */}
-      <NutritionSummary meals={meals} dogProfile={dogProfile} onNext={onGoSuggestions} />
+      {/* ✅ ここが 7日ローリング達成率版 */}
+      <NutritionSummary
+        meals={meals}
+        history={history}
+        dogProfile={dogProfile}
+        periodDays={7}
+        onNext={onGoSuggestions}
+      />
 
       {/* 最近の推移 */}
       <HistoryChart history={history} />
