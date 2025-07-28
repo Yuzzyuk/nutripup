@@ -4,6 +4,52 @@ import React, { useMemo } from "react";
 import NutritionSummary from "./NutritionSummary";
 import HistoryChart from "./HistoryChart";
 
+/**
+ * NutritionSummary と同じ方針：
+ * 入力無し → 全軸 0%、平均も 0%
+ */
+function calcScoreForToday(meals = []) {
+  if (!Array.isArray(meals) || meals.length === 0) {
+    return {
+      protein: 0, fats: 0, minerals: 0, vitamins: 0,
+      energy: 0, fiber: 0, calcium: 0, phosphorus: 0,
+    };
+  }
+
+  const tot = meals.reduce(
+    (a, m) => ({
+      protein: a.protein + (Number(m?.protein) || 0),
+      fat: a.fat + (Number(m?.fat) || 0),
+      calories: a.calories + (Number(m?.calories) || 0),
+      fiber: a.fiber + (Number(m?.fiber) || 0),
+      calcium: a.calcium + (Number(m?.calcium) || 0),
+      phosphorus: a.phosphorus + (Number(m?.phosphorus) || 0),
+      vitaminScore: a.vitaminScore + (Number(m?.vitamin_score) || 0),
+      mineralScore: a.mineralScore + (Number(m?.mineral_score) || 0),
+    }),
+    { protein: 0, fat: 0, calories: 0, fiber: 0, calcium: 0, phosphorus: 0, vitaminScore: 0, mineralScore: 0 }
+  );
+
+  const targets = {
+    protein: 50, fat: 15, calories: 800, fiber: 15, calcium: 1.0, phosphorus: 0.8,
+    vitaminScore: 1.0, mineralScore: 1.0,
+  };
+  const pct = (v, t) => (t > 0 ? Math.min(100, (v / t) * 100) : 0);
+
+  const obj = {
+    protein: pct(tot.protein, targets.protein),
+    fats: pct(tot.fat, targets.fat),
+    energy: pct(tot.calories, targets.calories),
+    fiber: pct(tot.fiber, targets.fiber),
+    calcium: pct(tot.calcium, targets.calcium),
+    phosphorus: pct(tot.phosphorus, targets.phosphorus),
+    vitamins: pct(tot.vitaminScore, targets.vitaminScore),
+    minerals: pct(tot.mineralScore, targets.mineralScore),
+  };
+
+  return obj;
+}
+
 export default function HomeDashboard({
   dogProfile = {},
   meals = [],
@@ -12,7 +58,6 @@ export default function HomeDashboard({
   onGoSuggestions,
   onGoHistory,
 }) {
-  // dogProfile を安全に扱う
   const name = (dogProfile?.name ?? "").toString();
   const breed = (dogProfile?.breed ?? "").toString();
   const weight = dogProfile?.weight ?? "";
@@ -21,28 +66,10 @@ export default function HomeDashboard({
   const photo = dogProfile?.photo || "";
   const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
 
-  // 今日のざっくりスコア（簡易）
+  // 今日の平均スコア：ダミー値を一切使わず、無入力なら 0%
   const todayScore = useMemo(() => {
-    const tot = (Array.isArray(meals) ? meals : []).reduce(
-      (a, m) => ({
-        protein: a.protein + (Number(m?.protein) || 0),
-        fat: a.fat + (Number(m?.fat) || 0),
-        carbs: a.carbs + (Number(m?.carbs) || 0),
-        calories: a.calories + (Number(m?.calories) || 0),
-      }),
-      { protein: 0, fat: 0, carbs: 0, calories: 0 }
-    );
-    const scoreObj = {
-      protein: Math.min(100, (tot.protein / 50) * 100),
-      fats: Math.min(100, (tot.fat / 15) * 100),
-      minerals: 60,
-      vitamins: 60,
-      energy: Math.min(100, (tot.calories / 800) * 100),
-      fiber: 55,
-      calcium: 55,
-      phosphorus: 55,
-    };
-    const avg = Object.values(scoreObj).reduce((a, b) => a + b, 0) / 8;
+    const s = calcScoreForToday(meals);
+    const avg = Object.values(s).reduce((a, b) => a + b, 0) / 8;
     return Math.round(avg);
   }, [meals]);
 
@@ -77,14 +104,8 @@ export default function HomeDashboard({
         </div>
       </div>
 
-      {/* ✅ ここが 7日ローリング達成率版 */}
-      <NutritionSummary
-        meals={meals}
-        history={history}
-        dogProfile={dogProfile}
-        periodDays={7}
-        onNext={onGoSuggestions}
-      />
+      {/* レーダー（栄養サマリー） */}
+      <NutritionSummary meals={meals} dogProfile={dogProfile} onNext={onGoSuggestions} />
 
       {/* 最近の推移 */}
       <HistoryChart history={history} />
