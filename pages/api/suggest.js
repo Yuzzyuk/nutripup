@@ -3,112 +3,134 @@ import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// ❶ サーバーでモデルを固定（必要なら Vercel 環境変数で上書き可）
-const MODEL = process.env.NUTRIPUP_MODEL || "gpt-4.1-mini";
+function buildPrompt(dog = {}, meals = []) {
+  const hf = Array.isArray(dog.healthFocus) ? dog.healthFocus : [];
+  const hfJa = hf.length ? hf.join(", ") : "なし";
 
-// ❷ サーバーで “専門家トーン” と出力形式を固定（必要なら env で上書き可）
-const SYSTEM_PROMPT =
-  process.env.NUTRIPUP_PROMPT ||
-  `You are a board-certified canine nutritionist (veterinary nutrition).
-Speak in the user's language. Warm, premium, concise. No hedging.
-Be specific in grams and kcal when possible (round to 0.1g). 
-Respect AAFCO/WSAVA guidance; avoid unsafe foods.
-Return evidence-backed, personalized guidance for THIS dog only.`;
-
-function safeArray(v) { return Array.isArray(v) ? v : []; }
-function num(v, d = 0) { const n = Number(v); return Number.isFinite(n) ? n : d; }
-
-function buildUserPrompt(dogProfile = {}, meals = []) {
-  const hf = safeArray(dogProfile.healthFocus);
-  const goals = safeArray(dogProfile.goals); // 任意: 目標フィールドがあれば反映
-  const ageYears = num(dogProfile.ageYears ?? dogProfile.age, 0);
-  const ageMonths = num(dogProfile.ageMonths, 0);
-
-  const safeMeals = safeArray(meals).map(m => ({
+  const safeMeals = (Array.isArray(meals) ? meals : []).map((m) => ({
     name: m?.name ?? "",
-    portion: num(m?.portion),
-    protein: num(m?.protein),
-    fat: num(m?.fat),
-    carbs: num(m?.carbs),
-    calories: num(m?.calories),
+    portion: Number(m?.portion) || 0,
+    protein: Number(m?.protein) || 0,
+    fat: Number(m?.fat) || 0,
+    carbs: Number(m?.carbs) || 0,
+    calories: Number(m?.calories) || 0,
   }));
 
+  const mealsBlock =
+    safeMeals.length === 0
+      ? "- なし"
+      : safeMeals
+          .map(
+            (m) =>
+              `- ${m.name}: ${m.portion}g (P${m.protein}g / F${m.fat}g / C${m.carbs}g, ${m.calories}kcal)`
+          )
+          .join("\n");
+
   return `
-DOG PROFILE
-- name: ${dogProfile?.name || "Dog"}
-- age: ${ageYears} years ${ageMonths} months
-- breed: ${dogProfile?.breed || ""}
-- weight: ${dogProfile?.weight || ""} ${dogProfile?.weightUnit || "kg"}
-- activity: ${dogProfile?.activityLevel || "Moderate"}
-- health_focus: ${hf.join(", ") || "none"}
-- goals: ${goals.join(", ") || "none"}
+あなたは**犬の臨床栄養**に精通したプロの栄養士です。飼い主は自炊派で、栄養バランスと安全性の両立を求めています。
+出力は**必ず日本語**・**JSONのみ**で返してください（装飾なし / コードブロックなし）。
 
-TODAY MEALS (per item; 100g-based scaled)
-${safeMeals.length
-  ? safeMeals.map(m => `- ${m.name}: ${m.portion}g (P${m.protein}g / F${m.fat}g / C${m.carbs}g, ${m.calories} kcal)`).join("\n")
-  : "- none"}
+[犬のプロフィール]
+- 名前: ${dog?.name || "Dog"}
+- 年齢: ${typeof dog?.ageYears === "number" || dog?.ageYears !== "" ? `${dog?.ageYears ?? 0}歳` : (dog?.age ?? "")} ${typeof dog?.ageMonths === "number" || dog?.ageMonths !== "" ? `${dog?.ageMonths ?? 0}ヶ月` : ""}
+- 体重: ${dog?.weight || ""} ${dog?.weightUnit || "kg"}
+- 活動量: ${dog?.activityLevel || "Moderate"}
+- 目標/気になる点: ${hfJa}
 
-TASK
-Return STRICT JSON only:
+[今日の食事（概算）]
+${mealsBlock}
+
+[要件]
+- AAFCO/WSAVA等の一般指針を参考にしつつ、**個別情報**（体重・活動量・健康フォーカス）に基づく**パーソナライズ**を行う。
+- **2〜4件**の提案。各提案は、改善理由（簡潔）＋**具体的な量(例: 1.2g, 5g, 50g)** を示す。
+- 可能な場合は**家庭で実行可能**な代替案（例: 卵殻カルシウム、青魚、カボチャ等）。
+- 塩分・玉ねぎ・ぶどう・キシリトールなど**有害食材の注意喚起**は必要時のみ短く。
+- **JSONのみ**で返す。スキーマは下記に厳密に従うこと（余分なキー, コメント, コードブロック禁止）。
+
+[JSONスキーマ]
 {
-  "summary": "1 sentence tailored to this dog",
+  "summary": "1文の要約（日本語）",
   "suggestions": [
-    {"title": "Calcium low", "detail": "Add eggshell powder", "amount": 1.2, "unit": "g"},
-    {"title": "...", "detail": "...", "amount": 5, "unit": "g"}
+    {
+      "title": "短い見出し（日本語）",
+      "detail": "具体的なアドバイス（日本語・必要ならg/kcal明記）",
+      "amount": 0,           // 数値。量が不要なら null
+      "unit": "g",           // g / kcal など。量が不要なら "" もしくは null
+      "evidence": ["WSAVA", "AAFCO"] // 参考枠組み名（あれば）
+    }
   ],
-  "sources": ["WSAVA Guidelines", "AAFCO Profiles"]
+  "disclaimer": "教育目的の注意文（日本語）"
 }
-- 2–4 suggestions.
-- Concrete amounts in grams/kcal when relevant.
-- Consider health_focus and goals.
-- If data is insufficient, say so briefly in summary and give safe defaults.
-`;
+`.trim();
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
+
   try {
     const { dogProfile, meals } = req.body || {};
 
-    const response = await client.responses.create({
-      model: MODEL,
-      input: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserPrompt(dogProfile, meals) }
+    // Chat Completionsを使い、JSONを**強制**（UIにモデル/プロンプトは出さない）
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" }, // ← JSONを強制
+      temperature: 0.6,
+      messages: [
+        {
+          role: "system",
+          content:
+            "あなたは犬の臨床栄養に詳しいプロの栄養士です。出力は必ず日本語かつJSONのみ。",
+        },
+        { role: "user", content: buildPrompt(dogProfile || {}, meals || []) },
       ],
-      max_output_tokens: 400,
-      // NOTE: Responses API は text.format で strict JSON も可能だが、
-      // ここでは output_text をパースし、失敗時はフォールバックする。
     });
 
-    const text = (response.output_text || "").trim();
+    const content =
+      completion?.choices?.[0]?.message?.content?.trim() || "{}";
 
     let json;
     try {
-      json = JSON.parse(text);
+      json = JSON.parse(content);
     } catch {
-      // モデルが JSON 以外を返した時のフォールバック
+      // ここに来たらモデルが指示に従っていないので緊急整形
       json = {
-        summary: "Personalized tips",
-        suggestions: text.split("\n").filter(Boolean).slice(0, 4).map(s => ({ title: "Tip", detail: s })),
-        sources: ["WSAVA", "AAFCO"]
+        summary: "本日の食事に関する簡易サマリーです。",
+        suggestions: [],
+        disclaimer:
+          "これは教育目的の一般アドバイスです。持病や継続症状がある場合は獣医師に相談してください。",
       };
     }
 
-    // 出力の最終バリデーション（欠けは補完）
-    json.summary = String(json.summary || "Personalized tips");
-    json.suggestions = safeArray(json.suggestions).slice(0, 4).map(it => ({
-      title: String(it?.title || "Tip"),
-      detail: String(it?.detail || ""),
-      amount: it?.amount != null && Number.isFinite(Number(it.amount)) ? Number(it.amount) : undefined,
-      unit: it?.unit || undefined,
+    // 最低限のバリデーション
+    if (!Array.isArray(json.suggestions)) json.suggestions = [];
+    json.suggestions = json.suggestions.slice(0, 4).map((s) => ({
+      title: (s?.title || "").toString(),
+      detail: (s?.detail || "").toString(),
+      amount:
+        s?.amount === null || s?.amount === "" || Number.isNaN(Number(s?.amount))
+          ? null
+          : Number(s.amount),
+      unit:
+        s?.unit == null
+          ? ""
+          : String(s.unit),
+      evidence: Array.isArray(s?.evidence) ? s.evidence.slice(0, 3) : [],
     }));
-    json.sources = safeArray(json.sources).slice(0, 5).map(String);
+    if (!json.summary) json.summary = "今日の食事は概ね良好です。";
+    if (!json.disclaimer)
+      json.disclaimer =
+        "これは教育目的の一般アドバイスです。持病や継続症状がある場合は獣医師に相談してください。";
 
-    res.status(200).json(json);
+    return res.status(200).json(json);
   } catch (e) {
-    // Vercel Runtime Logs で確認できる
-    console.error("AI_SUGGESTION_FAILED", e?.response?.data || e?.message || e);
-    res.status(500).json({ error: "AI_SUGGESTION_FAILED" });
+    // 429（クォータ）やその他をそのまま返す
+    const status = e?.status ?? 500;
+    const message =
+      e?.message ||
+      e?.error?.message ||
+      "AI_SUGGESTION_FAILED";
+    console.error("AI suggest error:", message);
+    return res.status(status).json({ error: message });
   }
 }
