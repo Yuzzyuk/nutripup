@@ -19,6 +19,7 @@ const todayKey = () => {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 };
+
 const genId = () =>
   Math.random().toString(36).slice(2) + Date.now().toString(36);
 
@@ -32,100 +33,65 @@ const DOGS_KEY = "np_dogs_v1";
 const SELECTED_DOG_KEY = "np_selected_dog_id";
 const OLD_PROFILE_KEY = "np_profile_v1";
 
-/* ---------- Normalizers (年齢: 年/月, 旧ageも維持) ---------- */
+/* ---------- Normalizers（安全に既定値を補う） ---------- */
 function normalizeDog(d = {}) {
   const hf = Array.isArray(d.healthFocus) ? d.healthFocus : [];
 
-  // 旧 age → years/months 推定
-  let years =
-    d.ageYears === "" || d.ageYears == null
-      ? ""
-      : Number.isFinite(Number(d.ageYears))
-      ? Number(d.ageYears)
-      : "";
-  let monthsRaw =
-    d.ageMonths === "" || d.ageMonths == null
-      ? ""
-      : Number.isFinite(Number(d.ageMonths))
-      ? Number(d.ageMonths)
-      : "";
-
-  if (years === "" && monthsRaw === "" && (d.age ?? "") !== "") {
-    const n = Number(d.age);
-    if (!Number.isNaN(n) && n >= 0) {
-      years = Math.floor(n);
-      const frac = n - years;
-      monthsRaw = Math.round(frac * 12);
-    }
-  }
-
-  const clampInt = (v, min, max) =>
-    Number.isFinite(Number(v))
-      ? Math.min(max, Math.max(min, Math.round(Number(v))))
-      : "";
-
-  const ageYears = years === "" ? "" : clampInt(years, 0, 40);
-  const ageMonths = monthsRaw === "" ? "" : clampInt(monthsRaw, 0, 11);
-
-  const ageLabel =
-    ageYears === "" && ageMonths === ""
-      ? ""
-      : `${ageYears || 0}y ${ageMonths || 0}m`;
+  // 年齢：旧 age を保持しつつ、ageYears / ageMonths があれば尊重
+  // （ProfileSetup 側で入力/整形してくれるので、ここでは最小限に留める）
+  const ageYears = d.ageYears ?? "";
+  const ageMonths = d.ageMonths ?? "";
 
   return {
     id: d.id || genId(),
+    photo: d.photo || "",
     name: d.name ?? "",
 
-    // 互換: 旧 age も保持（他画面の安全のため）
+    // 互換のため旧 age も保持
     age: d.age ?? "",
     ageYears,
     ageMonths,
-    ageLabel,
 
     breed: d.breed ?? "",
-    weight: d.weight ?? "",
+    weight: d.weight ?? "", // 文字列で保持（入力と相性が良い）
     weightUnit: d.weightUnit || "kg",
     activityLevel: d.activityLevel || "Moderate",
+    goal: d.goal || "maintain",
+    lifeStage: d.lifeStage || "adult",
     healthFocus: hf,
-    photo: d.photo || "",
   };
 }
 
-/* ---------- Meal sanitizer（8軸に必要な栄養を削らない版） ---------- */
 function sanitizeMeals(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .filter(Boolean)
-    .map((m) => ({
-      id: m?.id || genId(),
-      name: (m?.name ?? "").toString(),
-      method: (m?.method ?? m?.cookingMethod ?? "raw").toString(),
-      portion: Number(m?.portion) || 0,
+  return raw.filter(Boolean).map((m) => ({
+    id:
+      m?.id ||
+      Math.random().toString(36).slice(2) + Date.now().toString(36),
+    name: (m?.name ?? "").toString(),
+    method: (m?.method ?? m?.cookingMethod ?? "raw").toString(),
+    portion: Number(m?.portion) || 0,
+    protein: Number(m?.protein) || 0,
+    fat: Number(m?.fat) || 0,
+    carbs: Number(m?.carbs) || 0,
+    calories: Number(m?.calories) || 0,
 
-      // 8-Axis 用の拡張フィールドを保持
-      protein: Number(m?.protein) || 0,
-      fat: Number(m?.fat) || 0,
-      carbs: Number(m?.carbs) || 0,
-      calories: Number(m?.calories) || 0,
+    // ★ 7日スコア用：Ca / P / Ω3 / fiber を保存・復元
+    fiber: Number(m?.fiber) || 0,
+    calcium: Number(m?.calcium) || 0,       // g
+    phosphorus: Number(m?.phosphorus) || 0, // g
+    omega3: Number(m?.omega3) || 0,         // g
 
-      fiber: Number(m?.fiber) || 0, // g
-      calcium: Number(m?.calcium) || 0, // g
-      phosphorus: Number(m?.phosphorus) || 0, // g
-      omega3: Number(m?.omega3) || 0, // g
-
-      vitaminUnits: Number(m?.vitaminUnits) || 0, // 相対ユニット
-      mineralUnits: Number(m?.mineralUnits) || 0, // 相対ユニット
-
-      timestamp: m?.timestamp || new Date().toISOString(),
-    }));
+    timestamp: m?.timestamp || new Date().toISOString(),
+  }));
 }
 
 /* ---------- Page ---------- */
 export default function Home() {
-  const [step, setStep] = useState("home"); // home/profile/meals/suggestions/history/dogs
+  const [step, setStep] = useState("home"); // home / profile / meals / suggestions / history / dogs
   const [toast, setToast] = useState({ show: false, message: "" });
 
-  // 多頭
+  // 多頭対応
   const [dogs, setDogs] = useState([]);
   const [selectedDogId, setSelectedDogId] = useState("");
   const selectedDog = useMemo(
@@ -138,7 +104,7 @@ export default function Home() {
   const [meals, setMeals] = useState([]);
   const [history, setHistory] = useState([]);
 
-  /* ---- 初期ロード：dogs/selected を読む。旧データからの移行も ---- */
+  /* ---- 初期ロード：dogs / selected を読む。旧データ移行も ---- */
   useEffect(() => {
     try {
       const rawDogs = localStorage.getItem(DOGS_KEY);
@@ -199,7 +165,7 @@ export default function Home() {
     } catch {}
   }, [selectedDogId, today]);
 
-  /* ---- 永続化：meals/history/dogs ---- */
+  /* ---- 永続化：meals / history / dogs ---- */
   useEffect(() => {
     if (!selectedDogId) return;
     try {
@@ -236,6 +202,8 @@ export default function Home() {
       weight: "",
       weightUnit: "kg",
       activityLevel: "Moderate",
+      goal: "maintain",
+      lifeStage: "adult",
       healthFocus: [],
       photo: "",
     });
@@ -275,6 +243,8 @@ export default function Home() {
   };
 
   /* ---- ProfileSetup からの保存（追加/編集共通） ---- */
+  // 入力中は ProfileSetup 側でローカル state を持つので、
+  // ここでは「そのまま置き換える（正規化は Save 時）」にするのがキー入力安定のコツ。
   const saveProfile = (updated) => {
     const safe = normalizeDog(updated || {});
     setDogs((prev) => {
@@ -337,23 +307,21 @@ export default function Home() {
           />
         )}
 
-        {/* 追加/編集 プロフィール（完了後はHomeへ戻る） */}
+        {/* プロフィール（完了後は Home） */}
         {step === "profile" && (
           <ProfileSetup
             dogProfile={normalizeDog(selectedDog || { id: selectedDogId })}
-            setDogProfile={(patch) => {
-              // 入力中も常に正規化して保持（空新規でも即座に作成）
-              const base =
-                selectedDog || (selectedDogId ? { id: selectedDogId } : { id: genId() });
-              const next = normalizeDog({ ...base, ...patch });
-
+            setDogProfile={(next) => {
+              // 入力中の値をそのまま反映（上書き保存）※正規化は saveProfile 時のみ
+              const id = next?.id || selectedDogId || genId();
+              const merged = { ...(selectedDog || { id }), ...next, id };
               setDogs((prev) => {
-                const exists = prev.some((d) => d.id === next.id);
+                const exists = prev.some((d) => d.id === id);
                 return exists
-                  ? prev.map((d) => (d.id === next.id ? next : d))
-                  : [...prev, next];
+                  ? prev.map((d) => (d.id === id ? merged : d))
+                  : [...prev, merged];
               });
-              if (!selectedDogId) setSelectedDogId(next.id);
+              if (!selectedDogId) setSelectedDogId(id);
             }}
             onContinue={() =>
               saveProfile(
@@ -387,11 +355,12 @@ export default function Home() {
           />
         )}
 
-        {/* 賢い提案（ローカル + /api/suggest によるAI） */}
+        {/* 7日ロジック連動の提案（ローカル） */}
         {step === "suggestions" && selectedDog && (
           <DailySuggestions
             meals={meals}
-            dogProfile={normalizeDog(selectedDog)} // 念のため
+            history={history}
+            dogProfile={normalizeDog(selectedDog)}
             onBack={() => setStep("home")}
           />
         )}
@@ -407,7 +376,6 @@ export default function Home() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              {/* HomeDashboard の下半分（HistoryChart）を再利用 */}
               <HomeDashboard
                 dogProfile={normalizeDog(selectedDog)}
                 meals={meals}
