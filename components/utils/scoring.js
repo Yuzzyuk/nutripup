@@ -1,7 +1,7 @@
 // components/utils/scoring.js
 // === 7日間スコア算出（MVP：Energy/Protein/Fat/Ca/P/Omega3） ===
 
-// AAFCO-ish minima per 1000 kcal（成犬メンテの近似）
+// AAFCO-ish minima per 1000 kcal (adult maintenance, approximated)
 const MIN_PER_1000KCAL = {
   protein_g: 45,     // g
   fat_g: 13.8,       // g
@@ -9,22 +9,40 @@ const MIN_PER_1000KCAL = {
   phosphorus_g: 1.0, // g
 };
 
-// Omega-3（EPA+DHA）実務目安（g/kg/日）
-const OMEGA3_G_PER_KG_PER_DAY = 0.07; // 0.05–0.1の中間 → 週で×7
+// Omega-3 (EPA+DHA) practical target
+const OMEGA3_G_PER_KG_PER_DAY = 0.07; // 0.05–0.1 の中間値 → 週で ×7
 
 export function calcRER(weightKg) {
   const w = Math.max(0.5, Number(weightKg) || 0.5);
   return 70 * Math.pow(w, 0.75);
 }
 
-export function merFactor({ lifeStage = "adult", activityLevel = "Moderate", goal = "maintain" } = {}) {
-  // 簡易係数
-  if (lifeStage === "puppy_lt4m") return 3.0;  // 子犬〜4ヶ月
-  if (lifeStage === "puppy_ge4m") return 2.0;  // 子犬4–12ヶ月
-  if (goal === "weight_loss") return 1.1;      // 減量
-  if (activityLevel === "High") return 2.0;
-  if (activityLevel === "Low") return 1.3;
-  return 1.6; // 成犬・中等度
+// ✅ 避妊/去勢（spayNeuter）を係数に反映
+export function merFactor({
+  lifeStage = "adult",
+  activityLevel = "Moderate",
+  goal = "maintain",
+  spayNeuter = "neutered", // "neutered" or "intact"
+} = {}) {
+  // 子犬は高係数（避妊有無の影響は小さいので同じ扱い）
+  if (lifeStage === "puppy_lt4m") return 3.0;
+  if (lifeStage === "puppy_ge4m") return 2.0;
+
+  const neutered = spayNeuter === "neutered";
+
+  // 目標に応じた微調整（簡易）
+  if (goal === "weight_loss") return neutered ? 1.1 : 1.2;
+  if (goal === "weight_gain") {
+    // 増量は活動レベルを考慮しつつ少し高め
+    if (activityLevel === "High") return neutered ? 2.1 : 2.3;
+    if (activityLevel === "Low")  return neutered ? 1.6 : 1.8;
+    return neutered ? 1.8 : 2.0;
+  }
+
+  // 維持
+  if (activityLevel === "High") return neutered ? 2.0 : 2.2;
+  if (activityLevel === "Low")  return neutered ? 1.3 : 1.5;
+  return neutered ? 1.6 : 1.8; // Moderate
 }
 
 export function calcMERperDay(dog) {
@@ -33,12 +51,13 @@ export function calcMERperDay(dog) {
     lifeStage: dog?.lifeStage || "adult",
     activityLevel: dog?.activityLevel || "Moderate",
     goal: dog?.goal || "maintain",
+    spayNeuter: dog?.spayNeuter || "neutered",
   });
 }
 
 export function weeklyTargets(dog) {
   const mer = calcMERperDay(dog);
-  const k = (mer / 1000) * 7; // 7日分の1000kcal単位
+  const k = (mer / 1000) * 7; // 7日ぶんの 1000kcal 単位
   return {
     energy_kcal: mer * 7,
     protein_g: MIN_PER_1000KCAL.protein_g * k,
@@ -50,7 +69,7 @@ export function weeklyTargets(dog) {
   };
 }
 
-// 履歴6日 + 今日(=7日目) を合算
+// 履歴7日 + 今日の食事を合算（history: [{date, meals:[]}]）
 export function weeklyIntake(history = [], todayMeals = []) {
   const last6 = (Array.isArray(history) ? history : []).slice(-6);
   const days = [...last6.map(d => d.meals || []), (Array.isArray(todayMeals) ? todayMeals : [])];
@@ -80,11 +99,11 @@ function ratioScore(ca, p, {min, max, ideal}) {
   if (r >= min && r <= max) {
     const span = Math.max(ideal - min, max - ideal);
     const d = Math.abs(r - ideal);
-    const s = 100 - (d / span) * 10; // idealで100、境界で≈90
+    const s = 100 - (d / span) * 10; // ideal→100, 境界→約90
     return Math.max(90, Math.min(100, s));
   }
   const dist = r < min ? (min - r) : (r - max);
-  const s = 90 - dist * 60; // 大外れは60まで
+  const s = 90 - dist * 60; // 例：0.3ズレで 72
   return Math.max(60, Math.min(89, s));
 }
 
@@ -114,28 +133,24 @@ export function computeWeeklyScores(dog, history, todayMeals) {
   return { targets: tgt, intake: in7, scores, radar };
 }
 
-// 不足→簡易提案（週）
+// 不足量→提案例（MVP）
 export function simpleFixes(deficits) {
   const out = [];
-  // Ca不足→卵殻パウダー（Ca 0.37 g/g）
   if (deficits.calcium_g > 0.01) {
-    const grams = Math.ceil((deficits.calcium_g / 0.37) * 10) / 10;
+    const grams = Math.ceil((deficits.calcium_g / 0.37) * 10) / 10; // 卵殻Ca=0.37 g/g
     out.push({ title: "カルシウムを補う", detail: "卵殻パウダーを追加", amount: grams, unit: "g/週" });
   }
-  // Omega-3不足→フィッシュオイル（EPA+DHA ≈0.30 g/g仮置き）
   if (deficits.omega3_g > 0.05) {
-    const grams = Math.ceil((deficits.omega3_g / 0.30) * 10) / 10;
-    out.push({ title: "オメガ3を補う", detail: "フィッシュオイル/サーディンを追加", amount: grams, unit: "g/週（油換算）" });
+    const grams = Math.ceil((deficits.omega3_g / 0.30) * 10) / 10; // フィッシュオイルEPA+DHA目安
+    out.push({ title: "オメガ3を補う", detail: "フィッシュオイルやサーディンを追加", amount: grams, unit: "g/週（油換算）" });
   }
-  // Protein不足→鶏胸（P=0.31 g/g）
   if (deficits.protein_g > 1) {
-    const grams = Math.ceil((deficits.protein_g / 0.31) / 10) * 10;
+    const grams = Math.ceil((deficits.protein_g / 0.31) / 10) * 10; // 鶏胸肉P=0.31 g/g
     out.push({ title: "タンパク質を補う", detail: "鶏胸肉や白身魚を追加", amount: grams, unit: "g/週（鶏胸目安）" });
   }
-  // Fat不足→サーモン（脂質=0.14 g/g）
   if (deficits.fat_g > 1) {
-    const grams = Math.ceil((deficits.fat_g / 0.14) / 10) * 10;
-    out.push({ title: "脂質を補う", detail: "サーモン/オイルを少量追加", amount: grams, unit: "g/週（サーモン目安）" });
+    const grams = Math.ceil((deficits.fat_g / 0.14) / 10) * 10; // サーモン脂質=0.14 g/g
+    out.push({ title: "脂質を補う", detail: "サーモンやオイルを少量追加", amount: grams, unit: "g/週（サーモン目安）" });
   }
   return out;
 }
