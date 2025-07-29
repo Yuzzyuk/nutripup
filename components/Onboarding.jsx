@@ -12,8 +12,25 @@ const healthFocusOptions = [
   { id: "energy",  label: "元気・体力", icon: "⚡" },
 ];
 
+const activityOptions = [
+  {
+    id: "Low",
+    label: "低め",
+    desc: "散歩20–40分/日・室内中心。シニア/小型など。",
+  },
+  {
+    id: "Moderate",
+    label: "普通",
+    desc: "散歩40–90分/日＋遊び。平均的な家庭犬。",
+  },
+  {
+    id: "High",
+    label: "高め",
+    desc: "90分以上/日・ラン/スポーツ・とても活発。",
+  },
+];
+
 export default function Onboarding({ onComplete }) {
-  // ローカルフォーム（入力中のチラつき防止）
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     photo: "",
@@ -22,9 +39,10 @@ export default function Onboarding({ onComplete }) {
     ageMonths: "",
     weight: "",
     weightUnit: "kg",
+    spayNeuter: "neutered", // "neutered" | "intact"
     activityLevel: "Moderate",
-    goal: "maintain",     // maintain / weight_loss / weight_gain
-    lifeStage: "adult",   // adult / puppy_lt4m / puppy_ge4m（ageから推定）
+    goal: "maintain",       // maintain / weight_loss / weight_gain
+    lifeStage: "adult",     // adult / puppy_lt4m / puppy_ge4m（ageから推定）
     healthFocus: [],
   });
 
@@ -63,6 +81,7 @@ export default function Onboarding({ onComplete }) {
     Number(form.ageMonths || 0) >= 0 &&
     Number(form.ageMonths || 0) <= 11;
   const canNext2 = form.weight !== "" && Number(form.weight) > 0;
+  const canNext3 = ["neutered", "intact"].includes(form.spayNeuter);
 
   const finish = () => {
     onComplete &&
@@ -100,12 +119,12 @@ export default function Onboarding({ onComplete }) {
         </div>
       </div>
 
-      {/* 進行状況 */}
+      {/* 進行状況（全5ステップ） */}
       <div className="kpi" style={{ marginBottom: 8 }}>
         <b style={{ fontSize: 13 }}>Step {step + 1} / 5</b>
       </div>
 
-      {/* ステップ 0: 名前 */}
+      {/* 0: 名前 */}
       {step === 0 && (
         <div className="grid" style={{ gap: 10 }}>
           <label style={{ fontWeight: 700, color: "var(--taupe)" }}>名前</label>
@@ -123,7 +142,7 @@ export default function Onboarding({ onComplete }) {
         </div>
       )}
 
-      {/* ステップ 1: 年齢（年・月） */}
+      {/* 1: 年齢（年/月） */}
       {step === 1 && (
         <div className="grid" style={{ gap: 10 }}>
           <label style={{ fontWeight: 700, color: "var(--taupe)" }}>年齢</label>
@@ -156,7 +175,7 @@ export default function Onboarding({ onComplete }) {
         </div>
       )}
 
-      {/* ステップ 2: 体重 */}
+      {/* 2: 体重 */}
       {step === 2 && (
         <div className="grid" style={{ gap: 10 }}>
           <label style={{ fontWeight: 700, color: "var(--taupe)" }}>体重</label>
@@ -180,24 +199,47 @@ export default function Onboarding({ onComplete }) {
         </div>
       )}
 
-      {/* ステップ 3: 活動レベル・目標 */}
+      {/* 3: 避妊/去勢 + 活動レベル・目標 */}
       {step === 3 && (
-        <div className="grid" style={{ gap: 10 }}>
+        <div className="grid" style={{ gap: 12 }}>
           <div>
-            <label style={{ fontWeight: 700, color: "var(--taupe)" }}>活動レベル</label>
-            <div className="grid" style={{ gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-              {["Low","Moderate","High"].map((lvl) => (
+            <label style={{ fontWeight: 700, color: "var(--taupe)" }}>避妊/去勢の有無</label>
+            <div className="grid" style={{ gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
+              {[
+                { id: "neutered", label: "済み（避妊/去勢）" },
+                { id: "intact",   label: "未実施" },
+              ].map(opt => (
                 <button
-                  key={lvl}
+                  key={opt.id}
                   type="button"
-                  className={`btn ${form.activityLevel === lvl ? "btn-primary" : "btn-ghost"}`}
-                  onClick={() => setField("activityLevel", lvl)}
+                  className={`btn ${form.spayNeuter === opt.id ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setField("spayNeuter", opt.id)}
                 >
-                  {lvl}
+                  {opt.label}
                 </button>
               ))}
             </div>
           </div>
+
+          <div>
+            <label style={{ fontWeight: 700, color: "var(--taupe)" }}>運動量（分かりやすい目安）</label>
+            <div className="grid" style={{ gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              {activityOptions.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  className={`btn ${form.activityLevel === o.id ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setField("activityLevel", o.id)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginTop: 6, color: "var(--taupe)", fontSize: 13 }}>
+              {activityOptions.find(a => a.id === form.activityLevel)?.desc}
+            </div>
+          </div>
+
           <div>
             <label style={{ fontWeight: 700, color: "var(--taupe)" }}>目標</label>
             <div className="grid" style={{ gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
@@ -217,16 +259,17 @@ export default function Onboarding({ onComplete }) {
               ))}
             </div>
           </div>
+
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-ghost" onClick={() => setStep(2)}>戻る</button>
-            <button className="btn btn-primary" onClick={() => setStep(4)} style={{ flex: 1 }}>
+            <button className="btn btn-primary" disabled={!canNext3} onClick={() => setStep(4)} style={{ flex: 1 }}>
               次へ
             </button>
           </div>
         </div>
       )}
 
-      {/* ステップ 4: 健康フォーカス */}
+      {/* 4: 健康フォーカス */}
       {step === 4 && (
         <div className="grid" style={{ gap: 10 }}>
           <label style={{ fontWeight: 700, color: "var(--taupe)" }}>健康フォーカス（任意）</label>
