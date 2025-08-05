@@ -1,12 +1,6 @@
 // components/Layout.jsx
 "use client";
-export default function Layout({ step, setStep, children }) {
-  const tabs = [
-    { id: "home",        label: "Home",   emoji: "🏠" },
-    { id: "meals",       label: "Meals",  emoji: "🍽️" },
-    { id: "suggestions", label: "Tips",   emoji: "💡" },
-    { id: "history",     label: "History",emoji: "🗓️" },
-  ];
+export default function Layout({ step, setStep, children, hideNav = false }) {
   return (
     <div>
       <header className="header">
@@ -15,26 +9,16 @@ export default function Layout({ step, setStep, children }) {
           <div style={{color:'var(--taupe)', fontWeight:600}}>Premium Care</div>
         </div>
       </header>
-
-      <main className="container" style={{paddingBottom: 88}}>
+      <main className="container" style={{paddingBottom: hideNav ? 16 : 88}}>
         {children}
       </main>
-
-      <nav className="footer-nav">
-        <div className="tabbar">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              className={`tab ${step===t.id ? 'active' : ''}`}
-              onClick={() => setStep(t.id)}
-              aria-label={t.label}
-            >
-              <div style={{fontSize:20, marginBottom:4}}>{t.emoji}</div>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {!hideNav && (
+        <nav className="footer-nav">
+          <div className="tabbar">
+            {/* 使わないので空。今後必要ならここにタブを戻す */}
+          </div>
+        </nav>
+      )}
     </div>
   );
 }
