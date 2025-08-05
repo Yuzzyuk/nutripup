@@ -3,16 +3,15 @@
 import React, { useMemo } from "react";
 import NutritionSummary from "./NutritionSummary";
 import HistoryChart from "./HistoryChart";
-import { computeWeeklyScores } from "./utils/scoring";
+import DailySuggestions from "./DailySuggestions";
 
 export default function HomeDashboard({
   dogProfile = {},
   meals = [],
   history = [],
-  onGoMeals,
-  onGoSuggestions,
-  onGoHistory,
+  onAddMeals, // ← これを巨大CTAに接続
 }) {
+  // dogProfile を安全に扱う
   const name = (dogProfile?.name ?? "").toString();
   const breed = (dogProfile?.breed ?? "").toString();
   const weight = dogProfile?.weight ?? "";
@@ -21,20 +20,30 @@ export default function HomeDashboard({
   const photo = dogProfile?.photo || "";
   const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
 
-  // ✅ 7日スコアを利用（謎の固定36%を廃止）
-  const { radar, intake } = useMemo(
-    () => computeWeeklyScores(dogProfile, history, meals),
-    [dogProfile, history, meals]
-  );
-  const hasAnyIntake = useMemo(
-    () => Object.values(intake || {}).some((v) => (Number(v) || 0) > 0),
-    [intake]
-  );
-  const weekAvg = useMemo(() => {
-    if (!hasAnyIntake || !Array.isArray(radar) || radar.length === 0) return null;
-    const sum = radar.reduce((a, b) => a + (Number(b.value) || 0), 0);
-    return Math.round(sum / radar.length);
-  }, [radar, hasAnyIntake]);
+  // 今日のざっくりスコア（既存簡易ロジックのまま）
+  const todayScore = useMemo(() => {
+    const tot = (Array.isArray(meals) ? meals : []).reduce(
+      (a, m) => ({
+        protein: a.protein + (Number(m?.protein) || 0),
+        fat: a.fat + (Number(m?.fat) || 0),
+        carbs: a.carbs + (Number(m?.carbs) || 0),
+        calories: a.calories + (Number(m?.calories) || 0),
+      }),
+      { protein: 0, fat: 0, carbs: 0, calories: 0 }
+    );
+    const scoreObj = {
+      protein: Math.min(100, (tot.protein / 50) * 100),
+      fats: Math.min(100, (tot.fat / 15) * 100),
+      minerals: 60,
+      vitamins: 60,
+      energy: Math.min(100, (tot.calories / 800) * 100),
+      fiber: 55,
+      calcium: 55,
+      phosphorus: 55,
+    };
+    const avg = Object.values(scoreObj).reduce((a, b) => a + b, 0) / 8;
+    return Math.round(avg);
+  }, [meals]);
 
   return (
     <div className="grid" style={{ gap: 12 }}>
@@ -42,7 +51,7 @@ export default function HomeDashboard({
       <div className="card" style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <div
           style={{
-            width: 48, height: 48, borderRadius: "50%", overflow: "hidden",
+            width: 56, height: 56, borderRadius: "50%", overflow: "hidden",
             background: "var(--sand)", display: "flex", alignItems: "center", justifyContent: "center",
             border: "1px solid rgba(0,0,0,.06)"
           }}
@@ -62,28 +71,37 @@ export default function HomeDashboard({
             Activity: {activityLevel} {healthFocus.length ? `• Focus: ${healthFocus.join(", ")}` : ""}
           </div>
         </div>
-        <div className="badge" aria-label="7-day coverage">
-          {weekAvg == null ? "—" : `${weekAvg}%`}
+        <div className="badge" aria-label="Today average score">
+          {todayScore}%
         </div>
       </div>
 
-      {/* ✅ 7日レーダー（history を渡す） */}
-      <NutritionSummary meals={meals} dogProfile={dogProfile} history={history} onNext={onGoSuggestions} />
+      {/* レーダー（7日ロジックは NutritionSummary 側のscoringで維持） */}
+      <NutritionSummary meals={meals} dogProfile={dogProfile} history={history} />
 
-      {/* 最近の推移 */}
+      {/* でかいCTA：Add Meals */}
+      <div className="card" style={{ padding: 0 }}>
+        <button
+          className="btn btn-primary"
+          onClick={onAddMeals}
+          style={{
+            width: "100%",
+            minHeight: 64,
+            borderRadius: "var(--radius-lg)",
+            fontSize: 18,
+          }}
+        >
+          + Add Meals
+        </button>
+      </div>
+
+      {/* 最近の推移（残す） */}
       <HistoryChart history={history} />
 
-      {/* ショートカット */}
-      <div className="card" style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary" onClick={onGoMeals} style={{ flex: 1 }}>
-          Add Meals
-        </button>
-        <button className="btn btn-ghost" onClick={onGoSuggestions}>
-          Suggestions
-        </button>
-        <button className="btn btn-ghost" onClick={onGoHistory}>
-          History
-        </button>
+      {/* AI（DailySuggestions をHome内に常駐） */}
+      <div className="card">
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>AI Nutritionist</div>
+        <DailySuggestions meals={meals} dogProfile={dogProfile} />
       </div>
     </div>
   );
