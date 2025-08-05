@@ -3,8 +3,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Layout from "../components/Layout";
-import ProfileSetup from "../components/ProfileSetup"; // 編集用に残す（モーダル化は任意）
+import ProfileSetup from "../components/ProfileSetup";
 import MealInput from "../components/MealInput";
+import DailySuggestions from "../components/DailySuggestions";
 import HomeDashboard from "../components/HomeDashboard";
 import DogsManager from "../components/DogsManager";
 import DogSwitcher from "../components/DogSwitcher";
@@ -31,100 +32,63 @@ const DOGS_KEY = "np_dogs_v1";
 const SELECTED_DOG_KEY = "np_selected_dog_id";
 const OLD_PROFILE_KEY = "np_profile_v1";
 
-/* ---------- Normalizers (年齢: 年/月, 旧age互換 + 追加属性) ---------- */
+/* ---------- Normalizers (安全に既定値を入れる) ---------- */
 function normalizeDog(d = {}) {
   const hf = Array.isArray(d.healthFocus) ? d.healthFocus : [];
-
-  // ageYears/ageMonths が未指定なら旧 age から推定
-  let years =
-    d.ageYears === "" || d.ageYears == null
-      ? ""
-      : Number.isFinite(Number(d.ageYears))
-      ? Number(d.ageYears)
-      : "";
-  let monthsRaw =
-    d.ageMonths === "" || d.ageMonths == null
-      ? ""
-      : Number.isFinite(Number(d.ageMonths))
-      ? Number(d.ageMonths)
-      : "";
-
-  if (years === "" && monthsRaw === "" && (d.age ?? "") !== "") {
-    const n = Number(d.age);
-    if (!Number.isNaN(n) && n >= 0) {
-      years = Math.floor(n);
-      const frac = n - years;
-      monthsRaw = Math.round(frac * 12);
-    }
-  }
-
-  const clampInt = (v, min, max) =>
-    Number.isFinite(Number(v))
-      ? Math.min(max, Math.max(min, Math.round(Number(v))))
-      : "";
-
-  const ageYears = years === "" ? "" : clampInt(years, 0, 40);
-  const ageMonths = monthsRaw === "" ? "" : clampInt(monthsRaw, 0, 11);
-
-  const ageLabel =
-    ageYears === "" && ageMonths === ""
-      ? ""
-      : `${ageYears || 0}y ${ageMonths || 0}m`;
-
   return {
     id: d.id || genId(),
+    photo: d.photo || "",
     name: d.name ?? "",
 
-    // 旧 age 互換（他画面の安全のため保持）
+    // 年齢：ProfileSetup は ageYears/ageMonths を使う。旧 age も保持（互換）
     age: d.age ?? "",
-    ageYears,
-    ageMonths,
-    ageLabel,
+    ageYears: d.ageYears ?? "",
+    ageMonths: d.ageMonths ?? "",
 
     breed: d.breed ?? "",
     weight: d.weight ?? "",
     weightUnit: d.weightUnit || "kg",
     activityLevel: d.activityLevel || "Moderate",
-    healthFocus: hf,
-    photo: d.photo || "",
+    lifeStage: d.lifeStage || "adult",       // "adult" / "puppy_lt4m" / "puppy_ge4m"
+    goal: d.goal || "maintain",              // "maintain" / "weight_loss" / "weight_gain"
+    neutered: d.neutered ?? true,            // 避妊去勢（将来の係数調整で使用予定）
 
-    // 追加属性（将来の計算で利用）
-    lifeStage: d.lifeStage || "adult",            // adult / puppy_lt4m / puppy_ge4m
-    goal: d.goal || "maintain",                   // maintain / weight_loss / weight_gain
-    spayNeuter: d.spayNeuter || "neutered",       // neutered / intact
+    healthFocus: hf,
   };
 }
 
 function sanitizeMeals(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .filter(Boolean)
-    .map((m) => ({
-      id: m?.id || genId(),
-      name: (m?.name ?? "").toString(),
-      method: (m?.method ?? m?.cookingMethod ?? "raw").toString(),
-      portion: Number(m?.portion) || 0,
-      protein: Number(m?.protein) || 0,
-      fat: Number(m?.fat) || 0,
-      carbs: Number(m?.carbs) || 0,
-      calories: Number(m?.calories) || 0,
-      calcium: Number(m?.calcium) || 0,
-      phosphorus: Number(m?.phosphorus) || 0,
-      omega3: Number(m?.omega3) || 0,
-      timestamp: m?.timestamp || new Date().toISOString(),
-    }));
+  return raw.filter(Boolean).map((m) => ({
+    id: m?.id || genId(),
+    name: (m?.name ?? "").toString(),
+    method: (m?.method ?? m?.cookingMethod ?? "raw").toString(),
+    portion: Number(m?.portion) || 0,
+
+    // 栄養：未定義は0
+    protein: Number(m?.protein) || 0,
+    fat: Number(m?.fat) || 0,
+    carbs: Number(m?.carbs) || 0,
+    calories: Number(m?.calories) || 0,
+    fiber: Number(m?.fiber) || 0,
+    calcium: Number(m?.calcium) || 0,       // g
+    phosphorus: Number(m?.phosphorus) || 0, // g
+    omega3: Number(m?.omega3) || 0,         // g
+
+    // サプリ/時間帯/日付
+    isSupplement: !!m?.isSupplement,
+    timeOfDay: m?.timeOfDay || "AM",
+    date: m?.date || todayKey(),
+    timestamp:
+      m?.timestamp ||
+      new Date(`${m?.date || todayKey()}T12:00:00`).toISOString(),
+  }));
 }
 
 /* ---------- Page ---------- */
 export default function Home() {
-  // Home固定
-  const [step] = useState("home");
+  const [step, setStep] = useState("home"); // "home" / "profile" / "meals" / "suggestions" / "history" / "dogs"
   const [toast, setToast] = useState({ show: false, message: "" });
-
-  // オーバーレイ表示フラグ
-  const [showMealOverlay, setShowMealOverlay] = useState(false);
-  const [showDogsOverlay, setShowDogsOverlay] = useState(false);
-  const [showProfileOverlay, setShowProfileOverlay] = useState(false); // 任意
 
   // 多頭
   const [dogs, setDogs] = useState([]);
@@ -134,8 +98,10 @@ export default function Home() {
     [dogs, selectedDogId]
   );
 
-  // 今日の食事 & 履歴（選択犬ごと）
-  const today = useMemo(() => todayKey(), []);
+  // 選択日（MealInput で AM/PM や日付を付ける用）
+  const [selectedDay, setSelectedDay] = useState(todayKey());
+
+  // 今日の食事 & 履歴（選択犬ごと・選択日単位）
   const [meals, setMeals] = useState([]);
   const [history, setHistory] = useState([]);
 
@@ -167,20 +133,23 @@ export default function Home() {
         }
       }
 
+      // 正規化
       list = Array.isArray(list) ? list.map(normalizeDog) : [];
       setDogs(list);
       setSelectedDogId(rawSelected || (list[0]?.id || ""));
+      setStep(list && list.length > 0 ? "home" : "profile");
     } catch {
       setDogs([]);
       setSelectedDogId("");
+      setStep("profile");
     }
   }, []);
 
-  /* ---- 選択犬が変わったら、その犬の今日の meals と history をロード ---- */
+  /* ---- 選択犬 or 選択日 が変わったら、その日の meals と history をロード ---- */
   useEffect(() => {
     if (!selectedDogId) return;
     try {
-      const m = localStorage.getItem(mealsKey(selectedDogId, today));
+      const m = localStorage.getItem(mealsKey(selectedDogId, selectedDay));
       setMeals(sanitizeMeals(m ? JSON.parse(m) : []));
     } catch {
       setMeals([]);
@@ -195,15 +164,18 @@ export default function Home() {
     try {
       localStorage.setItem(SELECTED_DOG_KEY, selectedDogId);
     } catch {}
-  }, [selectedDogId, today]);
+  }, [selectedDogId, selectedDay]);
 
   /* ---- 永続化：meals/history/dogs ---- */
   useEffect(() => {
     if (!selectedDogId) return;
     try {
-      localStorage.setItem(mealsKey(selectedDogId, today), JSON.stringify(meals));
+      localStorage.setItem(
+        mealsKey(selectedDogId, selectedDay),
+        JSON.stringify(meals)
+      );
     } catch {}
-  }, [meals, selectedDogId, today]);
+  }, [meals, selectedDogId, selectedDay]);
 
   useEffect(() => {
     if (!selectedDogId) return;
@@ -219,14 +191,59 @@ export default function Home() {
     } catch {}
   }, [dogs]);
 
-  /* ---- 犬の操作 ---- */
-  const useDog = (dogId) => { setSelectedDogId(dogId); };
+  /* ---- 犬の CRUD ---- */
+  const addDog = () => {
+    const blank = normalizeDog({
+      id: genId(),
+      name: "",
+      age: "",
+      ageYears: "",
+      ageMonths: "",
+      breed: "",
+      weight: "",
+      weightUnit: "kg",
+      activityLevel: "Moderate",
+      lifeStage: "adult",
+      goal: "maintain",
+      healthFocus: [],
+      photo: "",
+    });
+    setDogs((prev) => [...prev, blank]);
+    setSelectedDogId(blank.id);
+    setStep("profile");
+  };
 
+  const editDog = (dog) => {
+    setSelectedDogId(dog.id);
+    setStep("profile");
+  };
+
+  const deleteDog = (dogId) => {
+    const confirmed = confirm(
+      "本当に削除しますか？（履歴・本日の食事も表示されなくなります）"
+    );
+    if (!confirmed) return;
+    setDogs((prev) => prev.filter((d) => d.id !== dogId));
+    if (selectedDogId === dogId) {
+      const rest = dogs.filter((d) => d.id !== dogId);
+      const next = rest[0]?.id || "";
+      setSelectedDogId(next);
+      setStep(next ? "home" : "profile");
+    }
+  };
+
+  const useDog = (dogId) => {
+    setSelectedDogId(dogId);
+    setStep("home");
+  };
+
+  // 写真更新（DogsManager から）
   const updateDogPhoto = (id, dataUrl) => {
     setDogs((prev) => prev.map((d) => (d.id === id ? { ...d, photo: dataUrl } : d)));
     setToast({ show: true, message: "Photo updated ✅" });
   };
 
+  /* ---- ProfileSetup からの保存（追加/編集共通） ---- */
   const saveProfile = (updated) => {
     const safe = normalizeDog(updated || {});
     setDogs((prev) => {
@@ -237,142 +254,178 @@ export default function Home() {
     });
     setSelectedDogId(safe.id);
     setToast({ show: true, message: "Profile saved ✅" });
-    setShowProfileOverlay(false);
+    setStep("home");
   };
 
+  /* ---- 選択日を履歴へ保存（週次集計に反映させる正式レコード） ---- */
   const saveToday = () => {
     if (!selectedDog) return;
     if (!meals || meals.length === 0) return;
-    const nowIso = new Date().toISOString();
-    const entry = { date: nowIso, meals: meals, score: 0 };
+    const iso = new Date(`${selectedDay}T12:00:00`).toISOString();
+    const entry = { date: iso, meals: meals, score: 0 };
     setHistory((prev) => {
       const next = [...prev];
+      const theDay = new Date(iso).toDateString();
       const idx = next.findIndex(
-        (e) => new Date(e.date).toDateString() === new Date(nowIso).toDateString()
+        (e) => new Date(e.date).toDateString() === theDay
       );
       if (idx >= 0) next[idx] = entry;
       else next.push(entry);
       return next;
     });
     setMeals([]);
-    setToast({ show: true, message: "Saved today’s meals to History ✅" });
+    try {
+      localStorage.setItem(mealsKey(selectedDogId, selectedDay), JSON.stringify([]));
+      localStorage.setItem(historyKey(selectedDogId), JSON.stringify(history));
+    } catch {}
+    setToast({ show: true, message: "Saved meals to History ✅" });
+    setStep("history");
   };
 
-  /* ---- 画面（Homeのみ） ---- */
+  /* ---- 画面 ---- */
   return (
     <>
-      <Layout step="home" setStep={() => {}} hideNav>
-        {/* 上部：Dog切替と「Manage Dogs」ボタン */}
-        {selectedDogId && (
+      <Layout step={step} setStep={setStep}>
+        {/* 上部に Dog 切替（home/meals/suggestions/history で表示） */}
+        {["home", "meals", "suggestions", "history"].includes(step) && (
           <DogSwitcher
             dogs={dogs}
             selectedDogId={selectedDogId}
             onSelect={useDog}
-            onManage={() => setShowDogsOverlay(true)}
+            onManage={() => setStep("dogs")}
           />
         )}
 
-        {/* Homeダッシュボード（AI・8角形は内部で維持） */}
-        {selectedDog && (
+        {/* 犬の管理 */}
+        {step === "dogs" && (
+          <DogsManager
+            dogs={dogs}
+            selectedDogId={selectedDogId}
+            onUse={useDog}
+            onAddNew={addDog}
+            onEdit={editDog}
+            onDelete={deleteDog}
+            onUpdatePhoto={updateDogPhoto}
+            onClose={() => setStep(selectedDog ? "home" : "profile")}
+          />
+        )}
+
+        {/* 追加/編集 プロフィール（完了後はHomeへ戻る） */}
+        {step === "profile" && (
+          <ProfileSetup
+            dogProfile={normalizeDog(selectedDog || { id: selectedDogId })}
+            setDogProfile={(patch) => {
+              // 入力中も正規化して保持（空新規でも即座に作成）
+              const base =
+                selectedDog || (selectedDogId ? { id: selectedDogId } : { id: genId() });
+              const next = normalizeDog({ ...base, ...patch });
+
+              setDogs((prev) => {
+                const exists = prev.some((d) => d.id === next.id);
+                return exists
+                  ? prev.map((d) => (d.id === next.id ? next : d))
+                  : [...prev, next];
+              });
+              if (!selectedDogId) setSelectedDogId(next.id);
+            }}
+            onContinue={() =>
+              saveProfile(
+                selectedDog ||
+                  dogs.find((d) => d.id === selectedDogId) || { id: selectedDogId }
+              )
+            }
+          />
+        )}
+
+        {/* ホーム（ダッシュボード） */}
+        {step === "home" && selectedDog && (
           <HomeDashboard
-            dogProfile={normalizeDog(selectedDog)}
+            dogProfile={normalizeDog(selectedDog)} // 念のため
             meals={meals}
             history={history}
-            onAddMeals={() => setShowMealOverlay(true)}
+            onGoMeals={() => setStep("meals")}
+            onGoSuggestions={() => setStep("suggestions")}
+            onGoHistory={() => setStep("history")}
           />
         )}
 
-        {/* 犬未選択の空状態 */}
-        {!selectedDog && (
+        {/* 食事入力（サプリ/AMPM/日付 対応） */}
+        {step === "meals" && selectedDog && (
+          <MealInput
+            meals={meals}
+            setMeals={(m) => setMeals(sanitizeMeals(m))}
+            dogName={selectedDog.name}
+            selectedDay={selectedDay}
+            setSelectedDay={setSelectedDay}
+            onNext={() => setStep("home")}
+            onBack={() => setStep("home")}
+          />
+        )}
+
+        {/* 賢い提案（ローカル + /api/suggest によるAI） */}
+        {step === "suggestions" && selectedDog && (
+          <DailySuggestions
+            meals={meals}
+            dogProfile={normalizeDog(selectedDog)} // 念のため
+            onBack={() => setStep("home")}
+          />
+        )}
+
+        {/* 履歴（犬ごと） */}
+        {step === "history" && selectedDog && (
+          <div className="card">
+            <h2 style={{ marginTop: 0 }}>
+              History — {selectedDog.name || "Dog"}
+            </h2>
+            <div style={{ color: "var(--taupe)", marginBottom: 8 }}>
+              最近のスコア推移と日別ログ
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              {/* HomeDashboard の下半分（HistoryChart）を再利用 */}
+              <HomeDashboard
+                dogProfile={normalizeDog(selectedDog)}
+                meals={meals}
+                history={history}
+                onGoMeals={() => setStep("meals")}
+                onGoSuggestions={() => setStep("suggestions")}
+                onGoHistory={() => {}}
+              />
+            </div>
+
+            <div className="card" style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-ghost" onClick={() => setStep("home")}>
+                Back to Home
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={saveToday}
+                style={{ flex: 1 }}
+              >
+                Save Today
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 犬が選択されていない場合の空状態 */}
+        {!selectedDog && step !== "profile" && step !== "dogs" && (
           <div className="card" style={{ padding: 16 }}>
             <div style={{ marginBottom: 8, fontWeight: 800 }}>No dog selected</div>
             <div style={{ marginBottom: 12, color: "var(--taupe)" }}>
-              まず犬を追加して選択してください（Manage Dogs から追加）。
+              まず犬を追加して選択してください。
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-primary" onClick={() => setShowDogsOverlay(true)}>
+              <button className="btn btn-ghost" onClick={() => setStep("dogs")}>
                 Manage Dogs
+              </button>
+              <button className="btn btn-primary" onClick={addDog}>
+                Add Dog
               </button>
             </div>
           </div>
         )}
       </Layout>
-
-      {/* === Overlays === */}
-      {/* MealInput オーバーレイ */}
-      {showMealOverlay && selectedDog && (
-        <div style={overlayWrapStyle} role="dialog" aria-modal="true">
-          <div className="card" style={overlayCardStyle}>
-            <MealInput
-              meals={meals}
-              setMeals={(m) => setMeals(sanitizeMeals(m))}
-              dogName={selectedDog.name}
-              onNext={() => setShowMealOverlay(false)}
-              onBack={() => setShowMealOverlay(false)}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={() => setShowMealOverlay(false)}>Close</button>
-              <button className="btn btn-primary" onClick={() => { saveToday(); setShowMealOverlay(false); }}>Save Today</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DogsManager オーバーレイ */}
-      {showDogsOverlay && (
-        <div style={overlayWrapStyle} role="dialog" aria-modal="true">
-          <div className="card" style={overlayCardStyle}>
-            <DogsManager
-              dogs={dogs}
-              selectedDogId={selectedDogId}
-              onUse={(id) => { setSelectedDogId(id); setShowDogsOverlay(false); }}
-              onAddNew={() => {
-                const blank = normalizeDog({
-                  id: genId(),
-                  name: "", age: "", ageYears: "", ageMonths: "",
-                  breed: "", weight: "", weightUnit: "kg",
-                  activityLevel: "Moderate", healthFocus: [], photo: "",
-                  lifeStage: "adult", goal: "maintain", spayNeuter: "neutered",
-                });
-                setDogs((prev) => [...prev, blank]);
-              }}
-              onEdit={() => setShowProfileOverlay(true)}
-              onDelete={(dogId) => {
-                const ok = confirm("本当に削除しますか？");
-                if (!ok) return;
-                setDogs((prev) => prev.filter((d) => d.id !== dogId));
-                if (selectedDogId === dogId) {
-                  const rest = dogs.filter((d) => d.id !== dogId);
-                  const next = rest[0]?.id || "";
-                  setSelectedDogId(next);
-                }
-              }}
-              onUpdatePhoto={updateDogPhoto}
-              onClose={() => setShowDogsOverlay(false)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ProfileSetup オーバーレイ（必要時のみ） */}
-      {showProfileOverlay && selectedDog && (
-        <div style={overlayWrapStyle} role="dialog" aria-modal="true">
-          <div className="card" style={overlayCardStyle}>
-            <ProfileSetup
-              dogProfile={normalizeDog(selectedDog)}
-              setDogProfile={(patch) => {
-                const next = normalizeDog({ ...selectedDog, ...patch });
-                setDogs((prev) => prev.map((d) => (d.id === next.id ? next : d)));
-              }}
-              onContinue={() => { saveProfile(selectedDog); setShowProfileOverlay(false); }}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={() => setShowProfileOverlay(false)}>Close</button>
-              <button className="btn btn-primary" onClick={() => { saveProfile(selectedDog); setShowProfileOverlay(false); }}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Toast */}
       <Toast
@@ -383,10 +436,3 @@ export default function Home() {
     </>
   );
 }
-
-/* ---- Overlay styles ---- */
-const overlayWrapStyle = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,.28)",
-  display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60
-};
-const overlayCardStyle = { width: "min(720px, 92vw)", maxHeight: "90vh", overflow: "auto" };
