@@ -2,15 +2,16 @@
 "use client";
 import React, { useMemo } from "react";
 import NutritionSummary from "./NutritionSummary";
-import HistoryChart from "./HistoryChart";
+// HistoryChartは残すなら使えるけど、今は非表示にする
+// import HistoryChart from "./HistoryChart";
 
 export default function HomeDashboard({
   dogProfile = {},
   meals = [],
   history = [],
   onGoMeals,
-  onGoSuggestions,
-  onGoHistory,
+  onGoSuggestions, // 使わないが互換のため残す
+  onGoHistory,     // 使わないが互換のため残す
 }) {
   const name = (dogProfile?.name ?? "").toString();
   const breed = (dogProfile?.breed ?? "").toString();
@@ -20,47 +21,11 @@ export default function HomeDashboard({
   const photo = dogProfile?.photo || "";
   const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
 
-  const todayScore = useMemo(() => {
-    const tot = (Array.isArray(meals) ? meals : []).reduce(
-      (a, m) => ({
-        protein: a.protein + (Number(m?.protein) || 0),
-        fat: a.fat + (Number(m?.fat) || 0),
-        carbs: a.carbs + (Number(m?.carbs) || 0),
-        calories: a.calories + (Number(m?.calories) || 0),
-      }),
-      { protein: 0, fat: 0, carbs: 0, calories: 0 }
-    );
-    const scoreObj = {
-      protein: Math.min(100, (tot.protein / 50) * 100),
-      fats: Math.min(100, (tot.fat / 15) * 100),
-      minerals: 60,
-      vitamins: 60,
-      energy: Math.min(100, (tot.calories / 800) * 100),
-      fiber: 55,
-      calcium: 55,
-      phosphorus: 55,
-    };
-    const avg = Object.values(scoreObj).reduce((a, b) => a + b, 0) / 8;
-    return Math.round(avg);
-  }, [meals]);
+  // ★ 以前の todayScore（固定60%混入→平均36%になる原因）を完全削除
 
   return (
-    <div className="grid" style={{ gap: 12, position:'relative', zIndex:2 }}>
-      {/* ★ Add Meals：一番上に大型CTA */}
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={onGoMeals}
-        style={{
-          width:'100%', minHeight:60, fontSize:18, borderRadius:16,
-          boxShadow:'var(--shadow-md)'
-        }}
-        aria-label="Add Meals"
-      >
-        ➕ Add Meals
-      </button>
-
-      {/* ヘッダーカード */}
+    <div className="grid" style={{ gap: 12 }}>
+      {/* ヘッダー（スコアバッジを外してシンプル化） */}
       <div className="card" style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <div
           style={{
@@ -84,27 +49,23 @@ export default function HomeDashboard({
             Activity: {activityLevel} {healthFocus.length ? `• Focus: ${healthFocus.join(", ")}` : ""}
           </div>
         </div>
-        <div className="badge" aria-label="Today average score">
-          {todayScore}%
-        </div>
+        {/* ← バッジ（36%）は削除 */}
       </div>
 
-      {/* レーダー */}
-      <NutritionSummary meals={meals} dogProfile={dogProfile} history={history} onNext={onGoSuggestions} />
+      {/* レーダー（7日ロジックで反映。NutritionSummaryはそのまま） */}
+      <NutritionSummary meals={meals} dogProfile={dogProfile} history={history} />
 
-      {/* 最近の推移 */}
-      <HistoryChart history={history} />
-
-      {/* ショートカット */}
-      <div className="card" style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary" onClick={onGoMeals} type="button" style={{ flex: 1 }}>
-          Add Meals
-        </button>
-        <button className="btn btn-ghost" onClick={onGoSuggestions} type="button">
-          Suggestions
-        </button>
-        <button className="btn btn-ghost" onClick={onGoHistory} type="button">
-          History
+      {/* 下のTips/ショートカットは削除。Add Mealsだけ大きく */}
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <button
+          className="btn btn-primary"
+          onClick={onGoMeals}
+          style={{
+            width: "100%", minHeight: 64,
+            fontSize: 18, fontWeight: 800, borderRadius: "var(--radius-lg)"
+          }}
+        >
+          + Add Meals
         </button>
       </div>
     </div>
