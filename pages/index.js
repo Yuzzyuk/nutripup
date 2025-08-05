@@ -3,14 +3,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Layout from "../components/Layout";
-import ProfileSetup from "../components/ProfileSetup";
+import ProfileSetup from "../components/ProfileSetup"; // 編集用に残す（モーダル化は任意）
 import MealInput from "../components/MealInput";
-import DailySuggestions from "../components/DailySuggestions";
 import HomeDashboard from "../components/HomeDashboard";
 import DogsManager from "../components/DogsManager";
 import DogSwitcher from "../components/DogSwitcher";
 import Toast from "../components/Toast";
-import OnboardingWizard from "../components/OnboardingWizard";
 
 /* ---------- Helpers & Storage Keys ---------- */
 const todayKey = () => {
@@ -90,7 +88,7 @@ function normalizeDog(d = {}) {
     healthFocus: hf,
     photo: d.photo || "",
 
-    // 追加属性（オンボーディングで使う）
+    // 追加属性（将来の計算で利用）
     lifeStage: d.lifeStage || "adult",            // adult / puppy_lt4m / puppy_ge4m
     goal: d.goal || "maintain",                   // maintain / weight_loss / weight_gain
     spayNeuter: d.spayNeuter || "neutered",       // neutered / intact
@@ -110,7 +108,6 @@ function sanitizeMeals(raw) {
       fat: Number(m?.fat) || 0,
       carbs: Number(m?.carbs) || 0,
       calories: Number(m?.calories) || 0,
-      // 将来: calcium, phosphorus, omega3 などを MealInput 側で持たせれば7日集計に反映されます
       calcium: Number(m?.calcium) || 0,
       phosphorus: Number(m?.phosphorus) || 0,
       omega3: Number(m?.omega3) || 0,
@@ -120,11 +117,14 @@ function sanitizeMeals(raw) {
 
 /* ---------- Page ---------- */
 export default function Home() {
-  const [step, setStep] = useState("home"); // home/profile/meals/suggestions/history/dogs
+  // Home固定
+  const [step] = useState("home");
   const [toast, setToast] = useState({ show: false, message: "" });
 
-  // 初回オンボーディング表示フラグ
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  // オーバーレイ表示フラグ
+  const [showMealOverlay, setShowMealOverlay] = useState(false);
+  const [showDogsOverlay, setShowDogsOverlay] = useState(false);
+  const [showProfileOverlay, setShowProfileOverlay] = useState(false); // 任意
 
   // 多頭
   const [dogs, setDogs] = useState([]);
@@ -167,18 +167,12 @@ export default function Home() {
         }
       }
 
-      // 正規化（欠けてるプロパティを補完）
       list = Array.isArray(list) ? list.map(normalizeDog) : [];
       setDogs(list);
       setSelectedDogId(rawSelected || (list[0]?.id || ""));
-      // 初回（犬が1匹もいない）ならウィザード表示
-      setShowOnboarding(!(list && list.length > 0));
-      setStep(list && list.length > 0 ? "home" : "home");
     } catch {
       setDogs([]);
       setSelectedDogId("");
-      setShowOnboarding(true);
-      setStep("home");
     }
   }, []);
 
@@ -225,61 +219,14 @@ export default function Home() {
     } catch {}
   }, [dogs]);
 
-  /* ---- 犬の CRUD ---- */
-  const addDog = () => {
-    const blank = normalizeDog({
-      id: genId(),
-      name: "",
-      age: "",
-      ageYears: "",
-      ageMonths: "",
-      breed: "",
-      weight: "",
-      weightUnit: "kg",
-      activityLevel: "Moderate",
-      healthFocus: [],
-      photo: "",
-      lifeStage: "adult",
-      goal: "maintain",
-      spayNeuter: "neutered",
-    });
-    setDogs((prev) => [...prev, blank]);
-    setSelectedDogId(blank.id);
-    setStep("profile");
-  };
+  /* ---- 犬の操作 ---- */
+  const useDog = (dogId) => { setSelectedDogId(dogId); };
 
-  const editDog = (dog) => {
-    setSelectedDogId(dog.id);
-    setStep("profile");
-  };
-
-  const deleteDog = (dogId) => {
-    const confirmed = confirm(
-      "本当に削除しますか？（履歴・本日の食事も表示されなくなります）"
-    );
-    if (!confirmed) return;
-    setDogs((prev) => prev.filter((d) => d.id !== dogId));
-    if (selectedDogId === dogId) {
-      const rest = dogs.filter((d) => d.id !== dogId);
-      const next = rest[0]?.id || "";
-      setSelectedDogId(next);
-      setStep(next ? "home" : "home");
-      setShowOnboarding(!next);
-    }
-  };
-
-  const useDog = (dogId) => {
-    setSelectedDogId(dogId);
-    setStep("home");
-  };
-
-  // 写真更新（DogsManager から）
   const updateDogPhoto = (id, dataUrl) => {
     setDogs((prev) => prev.map((d) => (d.id === id ? { ...d, photo: dataUrl } : d)));
     setToast({ show: true, message: "Photo updated ✅" });
   };
 
-  // プロフィール保存（オンボーディングの終了時にも利用）
   const saveProfile = (updated) => {
     const safe = normalizeDog(updated || {});
     setDogs((prev) => {
@@ -290,10 +237,9 @@ export default function Home() {
     });
     setSelectedDogId(safe.id);
     setToast({ show: true, message: "Profile saved ✅" });
-    setStep("home");
+    setShowProfileOverlay(false);
   };
 
-  // 今日を履歴へ保存
   const saveToday = () => {
     if (!selectedDog) return;
     if (!meals || meals.length === 0) return;
@@ -302,8 +248,7 @@ export default function Home() {
     setHistory((prev) => {
       const next = [...prev];
       const idx = next.findIndex(
-        (e) =>
-          new Date(e.date).toDateString() === new Date(nowIso).toDateString()
+        (e) => new Date(e.date).toDateString() === new Date(nowIso).toDateString()
       );
       if (idx >= 0) next[idx] = entry;
       else next.push(entry);
@@ -311,179 +256,123 @@ export default function Home() {
     });
     setMeals([]);
     setToast({ show: true, message: "Saved today’s meals to History ✅" });
-    setStep("history");
   };
 
-  /* ---- 画面 ---- */
+  /* ---- 画面（Homeのみ） ---- */
   return (
     <>
-      <Layout step={step} setStep={setStep}>
-        {/* ===== 初回オンボーディング（以後は表示しない） ===== */}
-        {showOnboarding ? (
-          <OnboardingWizard
-            onComplete={(form) => {
-              const newDog = {
-                id: genId(),
-                name: (form.name || "").trim(),
-                age: "", // 旧互換
-                ageYears: form.ageYears === "" ? "" : Number(form.ageYears),
-                ageMonths: form.ageMonths === "" ? "" : Number(form.ageMonths),
-                breed: "", // 初回は任意
-                weight: form.weight === "" ? "" : Number(form.weight),
-                weightUnit: form.weightUnit || "kg",
-                activityLevel: form.activityLevel || "Moderate",
-                healthFocus: Array.isArray(form.healthFocus) ? form.healthFocus : [],
-                photo: form.photo || "",
-                lifeStage: form.lifeStage || "adult",
-                goal: form.goal || "maintain",
-                spayNeuter: form.spayNeuter || "neutered",
-              };
-              saveProfile(newDog);      // 保存して Home へ
-              setShowOnboarding(false); // 次回以降は通常画面のみ
-            }}
+      <Layout step="home" setStep={() => {}} hideNav>
+        {/* 上部：Dog切替と「Manage Dogs」ボタン */}
+        {selectedDogId && (
+          <DogSwitcher
+            dogs={dogs}
+            selectedDogId={selectedDogId}
+            onSelect={useDog}
+            onManage={() => setShowDogsOverlay(true)}
           />
-        ) : (
-          <>
-            {/* 上部に Dog 切替（home/meals/suggestions/history で表示） */}
-            {["home", "meals", "suggestions", "history"].includes(step) && (
-              <DogSwitcher
-                dogs={dogs}
-                selectedDogId={selectedDogId}
-                onSelect={useDog}
-                onManage={() => setStep("dogs")}
-              />
-            )}
+        )}
 
-            {/* 犬の管理 */}
-            {step === "dogs" && (
-              <DogsManager
-                dogs={dogs}
-                selectedDogId={selectedDogId}
-                onUse={useDog}
-                onAddNew={addDog}
-                onEdit={editDog}
-                onDelete={deleteDog}
-                onUpdatePhoto={updateDogPhoto}
-                onClose={() => setStep(selectedDog ? "home" : "home")}
-              />
-            )}
+        {/* Homeダッシュボード（AI・8角形は内部で維持） */}
+        {selectedDog && (
+          <HomeDashboard
+            dogProfile={normalizeDog(selectedDog)}
+            meals={meals}
+            history={history}
+            onAddMeals={() => setShowMealOverlay(true)}
+          />
+        )}
 
-            {/* 追加/編集 プロフィール（普段は表示しない。Manageからのみ） */}
-            {step === "profile" && (
-              <ProfileSetup
-                dogProfile={normalizeDog(selectedDog || { id: selectedDogId })}
-                setDogProfile={(patch) => {
-                  // 入力中も常に正規化して保持（空新規でも即座に作成）
-                  const base =
-                    selectedDog || (selectedDogId ? { id: selectedDogId } : { id: genId() });
-                  const next = normalizeDog({ ...base, ...patch });
-
-                  setDogs((prev) => {
-                    const exists = prev.some((d) => d.id === next.id);
-                    return exists
-                      ? prev.map((d) => (d.id === next.id ? next : d))
-                      : [...prev, next];
-                  });
-                  if (!selectedDogId) setSelectedDogId(next.id);
-                }}
-                onContinue={() =>
-                  saveProfile(
-                    selectedDog ||
-                      dogs.find((d) => d.id === selectedDogId) || { id: selectedDogId }
-                  )
-                }
-              />
-            )}
-
-            {/* ホーム（ダッシュボード） */}
-            {step === "home" && selectedDog && (
-              <HomeDashboard
-                dogProfile={normalizeDog(selectedDog)}
-                meals={meals}
-                history={history}
-                onGoMeals={() => setStep("meals")}
-                onGoSuggestions={() => setStep("suggestions")}
-                onGoHistory={() => setStep("history")}
-              />
-            )}
-
-            {/* 食事入力 */}
-            {step === "meals" && selectedDog && (
-              <MealInput
-                meals={meals}
-                setMeals={(m) => setMeals(sanitizeMeals(m))}
-                dogName={selectedDog.name}
-                onNext={() => setStep("home")}
-                onBack={() => setStep("home")}
-              />
-            )}
-
-            {/* 賢い提案（ローカル + /api/suggest によるAI） */}
-            {step === "suggestions" && selectedDog && (
-              <DailySuggestions
-                meals={meals}
-                dogProfile={normalizeDog(selectedDog)}
-                onBack={() => setStep("home")}
-              />
-            )}
-
-            {/* 履歴（犬ごと） */}
-            {step === "history" && selectedDog && (
-              <div className="card">
-                <h2 style={{ marginTop: 0 }}>
-                  History — {selectedDog.name || "Dog"}
-                </h2>
-                <div style={{ color: "var(--taupe)", marginBottom: 8 }}>
-                  最近のスコア推移と日別ログ
-                </div>
-
-                <div style={{ marginBottom: 12 }}>
-                  {/* HomeDashboard の下半分（HistoryChart）を再利用 */}
-                  <HomeDashboard
-                    dogProfile={normalizeDog(selectedDog)}
-                    meals={meals}
-                    history={history}
-                    onGoMeals={() => setStep("meals")}
-                    onGoSuggestions={() => setStep("suggestions")}
-                    onGoHistory={() => {}}
-                  />
-                </div>
-
-                <div className="card" style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-ghost" onClick={() => setStep("home")}>
-                    Back to Home
-                  </button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={saveToday}
-                    style={{ flex: 1 }}
-                  >
-                    Save Today
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 犬が選択されていない場合の空状態 */}
-            {!selectedDog && step !== "profile" && step !== "dogs" && (
-              <div className="card" style={{ padding: 16 }}>
-                <div style={{ marginBottom: 8, fontWeight: 800 }}>No dog selected</div>
-                <div style={{ marginBottom: 12, color: "var(--taupe)" }}>
-                  まず犬を追加して選択してください。
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-ghost" onClick={() => setStep("dogs")}>
-                    Manage Dogs
-                  </button>
-                  <button className="btn btn-primary" onClick={addDog}>
-                    Add Dog
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+        {/* 犬未選択の空状態 */}
+        {!selectedDog && (
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ marginBottom: 8, fontWeight: 800 }}>No dog selected</div>
+            <div style={{ marginBottom: 12, color: "var(--taupe)" }}>
+              まず犬を追加して選択してください（Manage Dogs から追加）。
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-primary" onClick={() => setShowDogsOverlay(true)}>
+                Manage Dogs
+              </button>
+            </div>
+          </div>
         )}
       </Layout>
+
+      {/* === Overlays === */}
+      {/* MealInput オーバーレイ */}
+      {showMealOverlay && selectedDog && (
+        <div style={overlayWrapStyle} role="dialog" aria-modal="true">
+          <div className="card" style={overlayCardStyle}>
+            <MealInput
+              meals={meals}
+              setMeals={(m) => setMeals(sanitizeMeals(m))}
+              dogName={selectedDog.name}
+              onNext={() => setShowMealOverlay(false)}
+              onBack={() => setShowMealOverlay(false)}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" onClick={() => setShowMealOverlay(false)}>Close</button>
+              <button className="btn btn-primary" onClick={() => { saveToday(); setShowMealOverlay(false); }}>Save Today</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DogsManager オーバーレイ */}
+      {showDogsOverlay && (
+        <div style={overlayWrapStyle} role="dialog" aria-modal="true">
+          <div className="card" style={overlayCardStyle}>
+            <DogsManager
+              dogs={dogs}
+              selectedDogId={selectedDogId}
+              onUse={(id) => { setSelectedDogId(id); setShowDogsOverlay(false); }}
+              onAddNew={() => {
+                const blank = normalizeDog({
+                  id: genId(),
+                  name: "", age: "", ageYears: "", ageMonths: "",
+                  breed: "", weight: "", weightUnit: "kg",
+                  activityLevel: "Moderate", healthFocus: [], photo: "",
+                  lifeStage: "adult", goal: "maintain", spayNeuter: "neutered",
+                });
+                setDogs((prev) => [...prev, blank]);
+              }}
+              onEdit={() => setShowProfileOverlay(true)}
+              onDelete={(dogId) => {
+                const ok = confirm("本当に削除しますか？");
+                if (!ok) return;
+                setDogs((prev) => prev.filter((d) => d.id !== dogId));
+                if (selectedDogId === dogId) {
+                  const rest = dogs.filter((d) => d.id !== dogId);
+                  const next = rest[0]?.id || "";
+                  setSelectedDogId(next);
+                }
+              }}
+              onUpdatePhoto={updateDogPhoto}
+              onClose={() => setShowDogsOverlay(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ProfileSetup オーバーレイ（必要時のみ） */}
+      {showProfileOverlay && selectedDog && (
+        <div style={overlayWrapStyle} role="dialog" aria-modal="true">
+          <div className="card" style={overlayCardStyle}>
+            <ProfileSetup
+              dogProfile={normalizeDog(selectedDog)}
+              setDogProfile={(patch) => {
+                const next = normalizeDog({ ...selectedDog, ...patch });
+                setDogs((prev) => prev.map((d) => (d.id === next.id ? next : d)));
+              }}
+              onContinue={() => { saveProfile(selectedDog); setShowProfileOverlay(false); }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" onClick={() => setShowProfileOverlay(false)}>Close</button>
+              <button className="btn btn-primary" onClick={() => { saveProfile(selectedDog); setShowProfileOverlay(false); }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       <Toast
@@ -494,3 +383,10 @@ export default function Home() {
     </>
   );
 }
+
+/* ---- Overlay styles ---- */
+const overlayWrapStyle = {
+  position: "fixed", inset: 0, background: "rgba(0,0,0,.28)",
+  display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60
+};
+const overlayCardStyle = { width: "min(720px, 92vw)", maxHeight: "90vh", overflow: "auto" };
