@@ -10,7 +10,7 @@ import HomeDashboard from "../components/HomeDashboard";
 import DogsManager from "../components/DogsManager";
 import DogSwitcher from "../components/DogSwitcher";
 import Toast from "../components/Toast";
-import OnboardingWizard from "../components/OnboardingWizard"; // ← Wizard を使用
+import OnboardingWizard from "../components/OnboardingWizard";
 
 /* ---------- Helpers & Storage Keys ---------- */
 const todayKey = () => {
@@ -32,11 +32,10 @@ function historyKey(dogId) {
 const DOGS_KEY = "np_dogs_v1";
 const SELECTED_DOG_KEY = "np_selected_dog_id";
 
-/* ---------- Normalizers (年齢: 年/月 両対応) ---------- */
+/* ---------- Normalizers ---------- */
 function normalizeDog(d = {}) {
   const hf = Array.isArray(d.healthFocus) ? d.healthFocus : [];
 
-  // 年齢の正規化（旧 age → years/months に分解対応）
   let years =
     d.ageYears === "" || d.ageYears == null
       ? ""
@@ -76,23 +75,17 @@ function normalizeDog(d = {}) {
     id: d.id || genId(),
     photo: d.photo || "",
     name: d.name ?? "",
-
-    // 互換: 旧 age も保持（他画面の安全のため）
     age: d.age ?? "",
     ageYears,
     ageMonths,
     ageLabel,
-
     breed: d.breed ?? "",
     weight: d.weight ?? "",
     weightUnit: d.weightUnit || "kg",
-
     activityLevel: d.activityLevel || "Moderate",
-    // Wizardからくる項目を保持
     spayNeuter: d.spayNeuter === "intact" ? "intact" : "neutered",
-    goal: d.goal || "maintain",           // maintain / weight_loss / weight_gain
-    lifeStage: d.lifeStage || "adult",    // adult / puppy_lt4m / puppy_ge4m
-
+    goal: d.goal || "maintain",
+    lifeStage: d.lifeStage || "adult",
     healthFocus: hf,
   };
 }
@@ -110,24 +103,21 @@ function sanitizeMeals(raw) {
       fat: Number(m?.fat) || 0,
       carbs: Number(m?.carbs) || 0,
       calories: Number(m?.calories) || 0,
-      // 栄養拡張（ある場合に反映）
       fiber: Number(m?.fiber) || 0,
       calcium: Number(m?.calcium) || 0,
       phosphorus: Number(m?.phosphorus) || 0,
       omega3: Number(m?.omega3) || 0,
-      // 朝/夜・日付の拡張（対応しているMealInputなら拾える）
-      timeOfDay: (m?.timeOfDay ?? "").toString(), // "morning"/"evening"/""
-      date: (m?.date ?? "").toString(),           // "YYYY-MM-DD" or ""
+      timeOfDay: (m?.timeOfDay ?? "").toString(),
+      date: (m?.date ?? "").toString(),
       timestamp: m?.timestamp || new Date().toISOString(),
     }));
 }
 
 /* ---------- Page ---------- */
 export default function Home() {
-  const [step, setStep] = useState("home"); // home/profile/meals/suggestions/history/dogs
+  const [step, setStep] = useState("home"); // home / meals / profile / suggestions / history / dogs
   const [toast, setToast] = useState({ show: false, message: "" });
 
-  // 多頭
   const [dogs, setDogs] = useState([]);
   const [selectedDogId, setSelectedDogId] = useState("");
   const selectedDog = useMemo(
@@ -135,27 +125,21 @@ export default function Home() {
     [dogs, selectedDogId]
   );
 
-  // 今日の食事 & 履歴（選択犬ごと）
   const today = useMemo(() => todayKey(), []);
   const [meals, setMeals] = useState([]);
   const [history, setHistory] = useState([]);
 
-  // 初回オンボーディング表示フラグ
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  /* ---- 初期ロード：dogs/selected を読む ---- */
   useEffect(() => {
     try {
       const rawDogs = localStorage.getItem(DOGS_KEY);
       const rawSelected = localStorage.getItem(SELECTED_DOG_KEY);
       let list = rawDogs ? JSON.parse(rawDogs) : [];
-
       list = Array.isArray(list) ? list.map(normalizeDog) : [];
       setDogs(list);
       const sel = rawSelected || (list[0]?.id || "");
       setSelectedDogId(sel);
-
-      // 犬がいなければオンボーディングへ
       if (!list || list.length === 0) {
         setShowOnboarding(true);
         setStep("home");
@@ -171,43 +155,28 @@ export default function Home() {
     }
   }, []);
 
-  /* ---- 選択犬が変わったら、その犬の今日の meals と history をロード ---- */
   useEffect(() => {
     if (!selectedDogId) return;
     try {
       const m = localStorage.getItem(mealsKey(selectedDogId, today));
       setMeals(sanitizeMeals(m ? JSON.parse(m) : []));
-    } catch {
-      setMeals([]);
-    }
+    } catch { setMeals([]); }
     try {
       const h = localStorage.getItem(historyKey(selectedDogId));
       const parsed = h ? JSON.parse(h) : [];
       setHistory(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setHistory([]);
-    }
-    try {
-      localStorage.setItem(SELECTED_DOG_KEY, selectedDogId);
-    } catch {}
+    } catch { setHistory([]); }
+    try { localStorage.setItem(SELECTED_DOG_KEY, selectedDogId); } catch {}
   }, [selectedDogId, today]);
 
-  /* ---- 永続化：meals/history/dogs ---- */
   useEffect(() => {
     if (!selectedDogId) return;
-    try {
-      localStorage.setItem(
-        mealsKey(selectedDogId, today),
-        JSON.stringify(meals)
-      );
-    } catch {}
+    try { localStorage.setItem(mealsKey(selectedDogId, today), JSON.stringify(meals)); } catch {}
   }, [meals, selectedDogId, today]);
 
   useEffect(() => {
     if (!selectedDogId) return;
-    try {
-      localStorage.setItem(historyKey(selectedDogId), JSON.stringify(history));
-    } catch {}
+    try { localStorage.setItem(historyKey(selectedDogId), JSON.stringify(history)); } catch {}
   }, [history, selectedDogId]);
 
   useEffect(() => {
@@ -217,61 +186,29 @@ export default function Home() {
     } catch {}
   }, [dogs]);
 
-  /* ---- 犬の CRUD ---- */
   const addDog = () => {
-    const blank = normalizeDog({
-      id: genId(),
-      name: "",
-      age: "",
-      ageYears: "",
-      ageMonths: "",
-      breed: "",
-      weight: "",
-      weightUnit: "kg",
-      activityLevel: "Moderate",
-      spayNeuter: "neutered",
-      goal: "maintain",
-      lifeStage: "adult",
-      healthFocus: [],
-      photo: "",
-    });
-    setDogs((prev) => [...prev, blank]);
-    setSelectedDogId(blank.id);
-    setStep("profile");
+    setShowOnboarding(true); // 追加もWizardで
   };
-
-  const editDog = (dog) => {
-    setSelectedDogId(dog.id);
-    setStep("profile");
-  };
-
+  const editDog = (dog) => { setSelectedDogId(dog.id); setStep("profile"); };
   const deleteDog = (dogId) => {
-    const confirmed = confirm(
-      "本当に削除しますか？（履歴・本日の食事も表示されなくなります）"
-    );
+    const confirmed = confirm("本当に削除しますか？（履歴・本日の食事も表示されなくなります）");
     if (!confirmed) return;
     setDogs((prev) => prev.filter((d) => d.id !== dogId));
     if (selectedDogId === dogId) {
       const rest = dogs.filter((d) => d.id !== dogId);
       const next = rest[0]?.id || "";
       setSelectedDogId(next);
-      setStep(next ? "home" : "home");
+      setStep("home");
       if (!next) setShowOnboarding(true);
     }
   };
+  const useDog = (dogId) => { setSelectedDogId(dogId); setStep("home"); };
 
-  const useDog = (dogId) => {
-    setSelectedDogId(dogId);
-    setStep("home");
-  };
-
-  // 写真更新（DogsManager から）
   const updateDogPhoto = (id, dataUrl) => {
     setDogs((prev) => prev.map((d) => (d.id === id ? { ...d, photo: dataUrl } : d)));
     setToast({ show: true, message: "Photo updated ✅" });
   };
 
-  // Profile保存（既存プロフィール画面用）
   const saveProfile = (updated) => {
     const safe = normalizeDog(updated || {});
     setDogs((prev) => {
@@ -285,28 +222,23 @@ export default function Home() {
     setStep("home");
   };
 
-  // 今日を履歴に保存
   const saveToday = () => {
-    if (!selectedDog) return;
-    if (!meals || meals.length === 0) return;
+    if (!selectedDog || !meals.length) return;
     const nowIso = new Date().toISOString();
     const entry = { date: nowIso, meals: meals, score: 0 };
     setHistory((prev) => {
       const next = [...prev];
       const idx = next.findIndex(
-        (e) =>
-          new Date(e.date).toDateString() === new Date(nowIso).toDateString()
+        (e) => new Date(e.date).toDateString() === new Date(nowIso).toDateString()
       );
-      if (idx >= 0) next[idx] = entry;
-      else next.push(entry);
+      if (idx >= 0) next[idx] = entry; else next.push(entry);
       return next;
     });
     setMeals([]);
     setToast({ show: true, message: "Saved today’s meals to History ✅" });
-    setStep("history");
+    setStep("home"); // History画面へは遷移しない（Home一画面運用）
   };
 
-  // Wizard 完了 → 犬リストに登録
   const handleWizardComplete = (form) => {
     const dog = normalizeDog({
       id: genId(),
@@ -331,9 +263,7 @@ export default function Home() {
     setStep("home");
   };
 
-  /* ---- 画面 ---- */
   if (showOnboarding) {
-    // 初回はウィザードだけ出す（他UIは隠す）
     return (
       <>
         <div className="container" style={{ paddingTop: 16, paddingBottom: 24 }}>
@@ -351,8 +281,8 @@ export default function Home() {
   return (
     <>
       <Layout step={step} setStep={setStep}>
-        {/* 上部に Dog 切替（home/meals/suggestions/history で表示） */}
-        {["home", "meals", "suggestions", "history"].includes(step) && (
+        {/* 上部 Dog 切替のみ表示（Home一画面運用） */}
+        {["home","meals"].includes(step) && (
           <DogSwitcher
             dogs={dogs}
             selectedDogId={selectedDogId}
@@ -361,21 +291,19 @@ export default function Home() {
           />
         )}
 
-        {/* 犬の管理 */}
         {step === "dogs" && (
           <DogsManager
             dogs={dogs}
             selectedDogId={selectedDogId}
             onUse={useDog}
-            onAddNew={() => setShowOnboarding(true)}
-            onEdit={(dog) => { setSelectedDogId(dog.id); setStep("profile"); }}
+            onAddNew={addDog}
+            onEdit={editDog}
             onDelete={deleteDog}
             onUpdatePhoto={updateDogPhoto}
-            onClose={() => setStep(selectedDog ? "home" : "home")}
+            onClose={() => setStep("home")}
           />
         )}
 
-        {/* 追加/編集 プロフィール（任意で残す） */}
         {step === "profile" && selectedDog && (
           <ProfileSetup
             dogProfile={normalizeDog(selectedDog)}
@@ -388,19 +316,17 @@ export default function Home() {
           />
         )}
 
-        {/* ホーム（ダッシュボード） */}
         {step === "home" && selectedDog && (
           <HomeDashboard
             dogProfile={normalizeDog(selectedDog)}
             meals={meals}
             history={history}
             onGoMeals={() => setStep("meals")}
-            onGoSuggestions={() => setStep("suggestions")}
-            onGoHistory={() => setStep("history")}
+            onGoSuggestions={() => {}}
+            onGoHistory={() => {}}
           />
         )}
 
-        {/* 食事入力 */}
         {step === "meals" && selectedDog && (
           <MealInput
             meals={meals}
@@ -411,52 +337,8 @@ export default function Home() {
           />
         )}
 
-        {/* 提案（ローカル + /api/suggest） */}
-        {step === "suggestions" && selectedDog && (
-          <DailySuggestions
-            meals={meals}
-            dogProfile={normalizeDog(selectedDog)}
-            onBack={() => setStep("home")}
-          />
-        )}
+        {/* suggestions/history 画面へは遷移しない運用（残してもOK） */}
 
-        {/* 履歴（犬ごと） */}
-        {step === "history" && selectedDog && (
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>
-              History — {selectedDog.name || "Dog"}
-            </h2>
-            <div style={{ color: "var(--taupe)", marginBottom: 8 }}>
-              最近のスコア推移と日別ログ
-            </div>
-
-            <div style={{ marginBottom: 12 }}>
-              <HomeDashboard
-                dogProfile={normalizeDog(selectedDog)}
-                meals={meals}
-                history={history}
-                onGoMeals={() => setStep("meals")}
-                onGoSuggestions={() => setStep("suggestions")}
-                onGoHistory={() => {}}
-              />
-            </div>
-
-            <div className="card" style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-ghost" onClick={() => setStep("home")}>
-                Back to Home
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={saveToday}
-                style={{ flex: 1 }}
-              >
-                Save Today
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 犬が未選択のとき */}
         {!selectedDog && step !== "profile" && step !== "dogs" && (
           <div className="card" style={{ padding: 16 }}>
             <div style={{ marginBottom: 8, fontWeight: 800 }}>No dog selected</div>
@@ -475,7 +357,6 @@ export default function Home() {
         )}
       </Layout>
 
-      {/* Toast */}
       <Toast
         show={toast.show}
         message={toast.message}
