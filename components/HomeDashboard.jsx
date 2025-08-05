@@ -10,9 +10,9 @@ export default function HomeDashboard({
   dogProfile = {},
   meals = [],
   history = [],
-  onGoMeals,         // ← ここはそのまま受け取ってヘッダー右上だけで使う
-  onGoSuggestions,   // ← 使わない（下部ボタンを廃止）
-  onGoHistory,       // ← 使わない（下部ボタンを廃止）
+  onGoMeals,         // ← ヘッダー右上のみで使用（フッターは使わない）
+  onGoSuggestions,   // 未使用（ボタン廃止）
+  onGoHistory,       // 未使用（ボタン廃止）
 }) {
   // dogProfile を安全に扱う
   const name = (dogProfile?.name ?? "").toString();
@@ -23,17 +23,28 @@ export default function HomeDashboard({
   const photo = dogProfile?.photo || "";
   const healthFocus = Array.isArray(dogProfile?.healthFocus) ? dogProfile.healthFocus : [];
 
-  // 週の達成率（履歴・今日の食事がゼロなら 0%）
+  // ✅ 週の達成率：摂取合計がゼロなら必ず 0%
   const weeklyOverall = useMemo(() => {
-    const { radar } = computeWeeklyScores(dogProfile, history, meals);
-    if (!radar || radar.length === 0) return 0;
-    const avg = radar.reduce((a, b) => a + (Number(b.value) || 0), 0) / radar.length;
+    const { radar, intake } = computeWeeklyScores(dogProfile, history, meals);
+
+    const totalIntake =
+      (intake?.energy_kcal || 0) +
+      (intake?.protein_g || 0) +
+      (intake?.fat_g || 0) +
+      (intake?.calcium_g || 0) +
+      (intake?.phosphorus_g || 0) +
+      (intake?.omega3_g || 0);
+
+    if (!totalIntake) return 0; // ← 初回0%固定
+
+    const values = Array.isArray(radar) ? radar.map(r => Number(r.value) || 0) : [];
+    const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
     return Math.round(Math.max(0, Math.min(100, avg)));
   }, [dogProfile, history, meals]);
 
   return (
     <div className="grid" style={{ gap: 12 }}>
-      {/* ヘッダー（右上に Add Meals、下部ボタンは一切なし） */}
+      {/* ヘッダー（右上に Add Meals。Home 下部には一切ボタンなし） */}
       <div className="card" style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <div
           style={{
@@ -63,7 +74,7 @@ export default function HomeDashboard({
           {weeklyOverall}%
         </div>
 
-        {/* 右上だけに配置（Home 下部にはボタンを置かない） */}
+        {/* 右上だけに配置（Home 下部はボタン無し） */}
         {onGoMeals && (
           <button className="btn btn-primary" onClick={onGoMeals} style={{ marginLeft: 8 }}>
             Add Meals
@@ -77,7 +88,7 @@ export default function HomeDashboard({
       {/* 7日レーダー（scoring.js に基づく） */}
       <NutritionSummary meals={meals} dogProfile={dogProfile} history={history} />
 
-      {/* 最近の推移（履歴の可視化） */}
+      {/* 最近の推移（＝History）。別画面は作っていません。 */}
       <HistoryChart history={history} />
     </div>
   );
