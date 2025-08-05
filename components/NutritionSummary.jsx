@@ -7,10 +7,27 @@ import {
 import { computeWeeklyScores } from "./utils/scoring";
 
 export default function NutritionSummary({ meals = [], dogProfile = {}, history = [], onNext }) {
-  const { radar, scores } = useMemo(
+  const { radar, intake, scores } = useMemo(
     () => computeWeeklyScores(dogProfile, history, meals),
     [dogProfile, history, meals]
   );
+
+  const hasAnyIntake =
+    (intake?.energy_kcal || 0) +
+    (intake?.protein_g || 0) +
+    (intake?.fat_g || 0) +
+    (intake?.calcium_g || 0) +
+    (intake?.phosphorus_g || 0) +
+    (intake?.omega3_g || 0) > 0;
+
+  if (!hasAnyIntake) {
+    return (
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>7-Day Nutrition Radar (essentials)</h3>
+        <div style={{ color: "var(--taupe)" }}>まだデータがありません。まずは「Add Meals」で記録してください。</div>
+      </div>
+    );
+  }
 
   return (
     <div className="card">
@@ -27,7 +44,7 @@ export default function NutritionSummary({ meals = [], dogProfile = {}, history 
         </ResponsiveContainer>
       </div>
 
-      {/* Ca:P バランス（参考） */}
+      {/* 参考：Ca:P バランス */}
       <div className="badge" style={{ marginTop: 8 }}>
         Ca:P balance score {scores.ca_p_balance}（目標 1.2–1.5）
       </div>
