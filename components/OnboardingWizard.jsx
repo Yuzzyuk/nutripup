@@ -1,6 +1,6 @@
 // components/OnboardingWizard.jsx
 "use client";
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useCallback } from "react";
 import { fileToDataURL } from "./utils/imageToDataUrl";
 
 /** 任意の健康フォーカス */
@@ -28,11 +28,18 @@ export default function OnboardingWizard({ onComplete }) {
     healthFocus: [],
   });
 
-  const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
-  const toggleFocus = (id) => {
-    const cur = Array.isArray(form.healthFocus) ? form.healthFocus : [];
-    setField("healthFocus", cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]);
-  };
+  // ✅ 関数型アップデートで常に最新の state を参照（名前が1文字で止まる問題を防止）
+  const setField = useCallback((key, value) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const toggleFocus = useCallback((id) => {
+    setForm(prev => {
+      const cur = Array.isArray(prev.healthFocus) ? prev.healthFocus : [];
+      const next = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id];
+      return { ...prev, healthFocus: next };
+    });
+  }, []);
 
   /** 画像アップロード */
   const fileRef = useRef(null);
@@ -131,7 +138,8 @@ export default function OnboardingWizard({ onComplete }) {
               type="text"
               placeholder="例: もも / Momo"
               value={form.name}
-              onChange={(e) => setField("name", e.target.value)}
+              onChange={(e) => setField("name", e.target.value)} // ← ここが関数型アップデートで安定
+              autoFocus
             />
           </div>
         );
@@ -336,7 +344,7 @@ export default function OnboardingWizard({ onComplete }) {
             Next
           </button>
         ) : (
-          <button className="btn btn-primary" onClick={finish} disabled={!canNext} style={{ flex: 1 }}>
+          <button className="btn btn-primary" onClick={() => onComplete && onComplete(form)} disabled={!canNext} style={{ flex: 1 }}>
             Start NutriPup
           </button>
         )}
